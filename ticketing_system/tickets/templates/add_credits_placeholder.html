@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Credits - Event Ticket Management{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Add Credits to Your Account</h4>
+                </div>
+                <div class="card-body">
+                    <p class="lead">This is where you would normally add credits to your account using a credit card or other payment methods.</p>
+                    <p>For this demonstration system, direct payment integration is not active. In a live environment, you would be redirected to a secure payment gateway.</p>
+                    
+                    <hr>
+
+                    <h5>Simulate Adding Credits:</h5>
+                    <form method="POST" action="#"> <!-- Action will be a no-op for now -->
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="amount" class="form-label">Amount to Add (USD)</label>
+                            <input type="number" class="form-control" id="amount" name="amount" placeholder="e.g., 20" min="5" step="1">
+                        </div>
+                        
+                        <div class="alert alert-info" role="alert">
+                            <strong>Note:</strong> Clicking the button below will not process any real payment or add credits in this test environment. This feature is for demonstration purposes only.
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100" disabled>
+                            Proceed to Payment (Feature Coming Soon)
+                        </button>
+                    </form>
+                </div>
+                <div class="card-footer text-muted">
+                    <small>Thank you for using Event Ticket Management!</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

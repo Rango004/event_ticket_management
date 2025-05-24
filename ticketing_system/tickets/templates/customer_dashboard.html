@@ -1,0 +1,362 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block tickets_js %}
+<script src="/static/tickets/js/tickets.js"></script>
+{% endblock tickets_js %}
+
+{% block extra_css %}
+<style>
+    /* Announcements Carousel Styling */
+    #announcementCarousel {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    
+    .announcement-card {
+        background-color: var(--bs-dark-bg-subtle);
+        border: 1px solid var(--bs-border-color);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .announcement-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+    
+    .announcement-title {
+        color: var(--bs-light);
+        font-weight: 600;
+    }
+    
+    .announcement-content {
+        color: var(--bs-light);
+        opacity: 0.9;
+    }
+    
+    .announcement-meta {
+        color: var(--bs-secondary);
+        font-size: 0.85rem;
+    }
+    
+    .carousel-indicators [data-bs-target] {
+        background-color: var(--bs-secondary);
+    }
+    
+    .carousel-indicators .active {
+        background-color: var(--bs-primary);
+    }
+    
+    .carousel-control-prev-icon,
+    .carousel-control-next-icon {
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 50%;
+        padding: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Main Content -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">💳 Account Credits</h5>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span id="accountBalance" class="h2 text-primary">${{ user.profile.credits|floatformat:2 }}</span>
+                        <div class="btn-group">
+                            <a href="{% url 'purchase_token' %}" 
+                               class="btn btn-outline-info me-2">
+                                Redeem Token Code
+                            </a>
+                            <a href="{% url 'add_credits_placeholder' %}" 
+                               class="btn btn-outline-success">
+                                Add Credits
+                            </a>
+                            <button class="btn btn-primary" 
+                                    data-bs-toggle="modal" 
+                                    data-bs-target="#redeemModal">
+                                Redeem Token
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <form method="post" action="{% url 'claim_ticket' %}" id="claim-form">
+                        {% csrf_token %}
+                        <div class="input-group">
+                            <input type="text" name="code" 
+                                   class="form-control form-control-lg" 
+                                   placeholder="Enter 17-digit ticket code" 
+                                   pattern="[A-Z0-9]{17}"
+                                   title="Uppercase letters and numbers only">
+                            <button class="btn btn-success btn-lg" type="submit">
+                                🎫 Claim Ticket
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tickets Accordion -->
+    <div class="accordion mb-4" id="ticketsAccordion">
+        <h4 class="mb-3">🎟 Your Tickets</h4>
+        {% for ticket in user.ticket_set.all %}
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" 
+                        data-bs-toggle="collapse" 
+                        data-bs-target="#ticket{{ ticket.id }}">
+                    {{ ticket.event.name }} - {{ ticket.event.date|date:"M d" }}
+                </button>
+            </h2>
+            <div id="ticket{{ ticket.id }}" class="accordion-collapse collapse">
+                <div class="accordion-body">
+                    <div class="row">
+                        <div class="col-md-4 text-center">
+                            {% if ticket.qr_code %}
+                                <img src="{{ ticket.qr_code.url }}" 
+                                     class="img-fluid qr-code mb-3" 
+                                     alt="Ticket QR Code"
+                                     style="max-width: 200px;">
+                            {% else %}
+                                <div class="alert alert-warning">
+                                    QR Code not generated yet
+                                </div>
+                            {% endif %}
+                            <p class="text-muted small">
+                                <code>{{ ticket.unique_code }}</code>
+                            </p>
+                        </div>
+                        <div class="col-md-8">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p class="mb-2">
+                                        <i class="bi bi-calendar-event me-2"></i>
+                                        {{ ticket.event.date|date:"M d, Y H:i" }}
+                                    </p>
+                                    <p class="mb-2">
+                                        <i class="bi bi-geo-alt me-2"></i>
+                                        {{ ticket.event.location }}
+                                    </p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p class="mb-2">
+                                        Status: <span class="badge bg-{{ ticket.status|yesno:'success,secondary' }}">
+                                        {{ ticket.get_status_display }}
+                                    </span>
+                                    </p>
+                                    <p class="mb-0">
+                                        Price: ${{ ticket.event.price }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="alert alert-info">
+            🎭 No tickets claimed or purchased yet
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Events Grid -->
+    <h4 class="mb-3">🎪 Available Events</h4>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+        {% for event in events %}
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">{{ event.name }}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-3">
+                        <span class="badge bg-primary">
+                            📅 {{ event.date|date:"M d, Y" }}
+                        </span>
+                        <span class="badge bg-secondary">
+                            🕒 {{ event.date|time:"H:i" }}
+                        </span>
+                    </div>
+                    <p class="card-text">
+                        <i class="bi bi-geo-alt me-1"></i>
+                        {{ event.location }}
+                    </p>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="h5 text-success">${{ event.price }}</span>
+                        {% if event.available_tickets > 0 %}
+                        <button class="btn btn-success btn-sm buy-ticket-btn"
+                               data-bs-toggle="modal"
+                               data-bs-target="#confirmationSection"
+                               data-event-id="{{ event.id }}"
+                               data-event-name="{{ event.name|escapejs }}"
+                               data-event-price="{{ event.price }}">
+                            🛒 Buy Ticket
+                        </button>
+                        {% else %}
+                        <button class="btn btn-secondary btn-sm" disabled>
+                            Sold Out
+                        </button>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted">
+                        {{ event.available_tickets }} tickets remaining
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col">
+            <div class="alert alert-warning">
+                🎪 No upcoming events available
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Announcements Carousel at Bottom -->
+    {% if announcements %}
+    <div class="row mt-5 pt-4">
+        <div class="col-12">
+            <h4 class="text-center mb-3">📢 Latest Announcements</h4>
+            <div id="announcementCarousel" class="carousel slide" data-bs-ride="carousel">
+                <div class="carousel-indicators">
+                    {% for announcement in announcements %}
+                    <button type="button" data-bs-target="#announcementCarousel" 
+                            data-bs-slide-to="{{ forloop.counter0 }}" 
+                            {% if forloop.first %}class="active"{% endif %} 
+                            aria-current="{% if forloop.first %}true{% else %}false{% endif %}" 
+                            aria-label="Announcement {{ forloop.counter }}">
+                    </button>
+                    {% endfor %}
+                </div>
+                <div class="carousel-inner rounded-3">
+                    {% for announcement in announcements %}
+                    <div class="carousel-item {% if forloop.first %}active{% endif %}">
+                        <div class="card border-0 announcement-card">
+                            <div class="card-body p-4">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h4 class="card-title mb-0 announcement-title">
+                                        <i class="bi bi-megaphone me-2"></i>{{ announcement.title }}
+                                    </h4>
+                                    <span class="badge {% if announcement.priority == 'HIGH' %}bg-danger{% elif announcement.priority == 'MEDIUM' %}bg-warning{% else %}bg-info{% endif %}">
+                                        {{ announcement.get_priority_display }}
+                                    </span>
+                                </div>
+                                <p class="card-text announcement-content">{{ announcement.content|linebreaksbr }}</p>
+                                <div class="announcement-meta mt-3">
+                                    <i class="bi bi-clock me-1"></i>
+                                    Posted on {{ announcement.created_at|date:"M d, Y H:i" }}
+                                    {% if announcement.valid_until %}
+                                    • <i class="bi bi-clock-history ms-2 me-1"></i>Valid until {{ announcement.valid_until|date:"M d, Y H:i" }}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button class="carousel-control-prev" type="button" data-bs-target="#announcementCarousel" data-bs-slide="prev">
+                    <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                    <span class="visually-hidden">Previous</span>
+                </button>
+                <button class="carousel-control-next" type="button" data-bs-target="#announcementCarousel" data-bs-slide="next">
+                    <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                    <span class="visually-hidden">Next</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Purchase Modal -->
+<div id="confirmationSection" class="modal fade">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Purchase</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to purchase a ticket for: <strong id="modalEventName">[Event Name]</strong>?</p>
+                <p>You will be charged: $<span id="chargeAmount">0.00</span></p>
+                <p>Your current balance: $<span id="currentBalance">{{ user.profile.credits|floatformat:2 }}</span></p>
+                <div id="insufficientFundsAlert" class="alert alert-danger d-none">
+                    You don't have enough credits. Please add more credits by redeeming a token.
+                </div>
+                <button id="confirmPurchase" class="btn btn-danger w-100">
+                    Confirm Purchase
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+{% endblock content %}  <!-- Close content block here -->
+
+{% block scripts %}
+<!-- Token Redemption Modal -->
+<div class="modal fade" id="redeemModal" tabindex="-1" aria-labelledby="redeemModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="redeemModalLabel">Redeem Token</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post" action="{% url 'redeem_token' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="token_code" class="form-label">Token Code</label>
+                        <input type="text" class="form-control" id="token_code" name="token_code" 
+                               placeholder="Enter token code" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Redeem Token</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="purchaseToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header bg-success text-white">
+            <strong class="me-auto">Success!</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">
+            Ticket purchased successfully!
+        </div>
+    </div>
+</div>
+
+<!-- Error Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="errorToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header bg-danger text-white">
+            <strong class="me-auto">Error</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="errorMessage">
+            An error occurred.
+        </div>
+    </div>
+</div>
+{% endblock scripts %}
+

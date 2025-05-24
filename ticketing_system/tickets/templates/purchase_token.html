@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h4>Redeem Credit Token</h4>
+        </div>
+        <div class="card-body">
+            <form method="post" action="{% url 'redeem_token' %}">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="token_code" class="form-label">Token Code</label>
+                    <input type="text" name="token_code" id="token_code" 
+                           class="form-control" 
+                           placeholder="Enter your token code"
+                           required>
+                </div>
+                <button type="submit" class="btn btn-success">
+                    Redeem Token
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

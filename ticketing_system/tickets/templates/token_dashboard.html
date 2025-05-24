@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card shadow-lg">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Token Management Dashboard</h4>
+                <button class="btn btn-light" data-bs-toggle="modal" data-bs-target="#generateTokenModal">
+                    <i class="bi bi-plus-circle"></i> Generate New Token
+                </button>
+            </div>
+        </div>
+        
+        <div class="card-body">
+            <!-- Token Filters -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <input type="date" class="form-control" id="filterDate">
+                </div>
+                <div class="col-md-4">
+                    <select class="form-select" id="filterStatus">
+                        <option value="all">All Tokens</option>
+                        <option value="active">Active Tokens</option>
+                        <option value="expired">Expired Tokens</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <button class="btn btn-secondary" id="exportBtn">
+                        <i class="bi bi-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tokens Table -->
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Token Code</th>
+                            <th>Amount</th>
+                            <th>Created By</th>
+                            <th>Created At</th>
+                            <th>Expiry Date</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for token in tokens %}
+                        <tr class="{% if token.is_expired %}table-danger{% else %}table-success{% endif %}">
+                            <td><code>{{ token.code }}</code></td>
+                            <td>${{ token.amount }}</td>
+                            <td>{{ token.created_by.get_full_name|default:token.created_by.username }}</td>
+                            <td>{{ token.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ token.expiry_date|date:"M d, Y H:i" }}</td>
+                            <td>
+                                {% if token.is_expired %}
+                                <span class="badge bg-danger">Expired</span>
+                                {% else %}
+                                <span class="badge bg-success">Active</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger revoke-btn" 
+                                        data-token-id="{{ token.id }}">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center">No tokens found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Generate Token Modal -->
+<div class="modal fade" id="generateTokenModal">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Generate New Token</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="tokenForm" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Amount (USD)</label>
+                        <input type="number" name="amount" class="form-control" 
+                               min="50" step="50" value="50" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Expiry Date</label>
+                        <input type="datetime-local" name="expiry_date" 
+                               class="form-control" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">
+                        Generate Token
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Filter functionality
+    document.getElementById('filterStatus').addEventListener('change', function() {
+        const status = this.value;
+        window.location.search = `?status=${status}`;
+    });
+
+    // Revoke token functionality
+    document.querySelectorAll('.revoke-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const tokenId = btn.dataset.tokenId;
+            if (confirm('Are you sure you want to revoke this token?')) {
+                try {
+                    const response = await fetch(`/tokens/${tokenId}/revoke/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        }
+                    });
+                    if (response.ok) window.location.reload();
+                } catch (error) {
+                    console.error('Revoke failed:', error);
+                }
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h4 class="mb-0">Delete Announcement</h4>
+                </div>
+                <div class="card-body">
+                    <p>Are you sure you want to delete the following announcement?</p>
+                    
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ announcement.title }}</h5>
+                            <p class="card-text">{{ announcement.content|truncatewords:30 }}</p>
+                            <div class="text-muted small">
+                                <span class="badge {% if announcement.priority == 'HIGH' %}bg-danger{% elif announcement.priority == 'MEDIUM' %}bg-warning{% else %}bg-info{% endif %} me-2">
+                                    {{ announcement.get_priority_display }}
+                                </span>
+                                <span>Created on {{ announcement.created_at|date:"M d, Y H:i" }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'manage_announcements' %}" class="btn btn-outline-secondary me-md-2">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-trash"></i> Delete Announcement
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

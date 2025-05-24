@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Manage Announcements</h2>
+        <a href="{% url 'create_announcement' %}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create New Announcement
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-body">
+            {% if announcements %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Valid Until</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for announcement in announcements %}
+                            <tr>
+                                <td>{{ announcement.title }}</td>
+                                <td>
+                                    <span class="badge {% if announcement.priority == 'HIGH' %}bg-danger{% elif announcement.priority == 'MEDIUM' %}bg-warning{% else %}bg-info{% endif %}">
+                                        {{ announcement.get_priority_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {% if announcement.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                        {{ announcement.is_active|yesno:"Active,Inactive" }}
+                                    </span>
+                                </td>
+                                <td>{{ announcement.created_at|date:"M d, Y H:i" }}</td>
+                                <td>{{ announcement.valid_until|date:"M d, Y H:i"|default:"No expiry" }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'edit_announcement' announcement.id %}" class="btn btn-outline-primary">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <a href="{% url 'delete_announcement' announcement.id %}" class="btn btn-outline-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    No announcements found. Create your first announcement by clicking the button above.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

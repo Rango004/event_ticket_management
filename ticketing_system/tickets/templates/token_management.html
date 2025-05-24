@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h4>Token Management</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <!-- Generate Token Form -->
+                <div class="col-md-6">
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">Amount (USD)</label>
+                            <input type="number" name="amount" 
+                                   class="form-control" 
+                                   min="50" step="50" value="50" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Expiry Date</label>
+                            <input type="datetime-local" name="expiry_date" 
+                                   class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-success">
+                            Generate Token
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- Active Tokens List -->
+                <div class="col-md-6">
+                    <h5>Active Tokens</h5>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Code</th>
+                                <th>Amount</th>
+                                <th>Expires</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for token in active_tokens %}
+                            <tr>
+                                <td>{{ token.code }}</td>
+                                <td>${{ token.amount }}</td>
+                                <td>{{ token.expiry_date|date:"M d, Y H:i" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

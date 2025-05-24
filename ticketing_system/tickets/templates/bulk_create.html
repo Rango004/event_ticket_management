@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Bulk Create Tickets{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Bulk Ticket Creation</h4>
+            </div>
+            <div class="card-body">
+                <form method="post" class="row g-3">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label for="event" class="form-label">Select Event</label>
+                        <select name="event" id="event" class="form-select" required>
+                            {% for event in events %}
+                                <option value="{{ event.id }}">{{ event.name }} ({{ event.date|date:"M d, Y" }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="quantity" class="form-label">Number of Tickets</label>
+                        <input type="number" name="quantity" id="quantity" 
+                               class="form-control" min="1" required>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-ticket-perforated me-2"></i>
+                            Generate Tickets
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

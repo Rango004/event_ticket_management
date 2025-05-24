@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    Management Actions
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'create_event' %}" class="btn btn-primary mb-2">
+                            <i class="bi bi-plus-circle"></i> New Event
+                        </a>
+                        <a href="{% url 'bulk_create_tickets' %}" class="btn btn-success mb-2">
+                            <i class="bi bi-ticket-perforated"></i> Bulk Tickets
+                        </a>
+                        <a href="{% url 'token_dashboard' %}" class="btn btn-info mb-2">
+                            <i class="bi bi-coin"></i> Manage Tokens
+                        </a>
+                        <a href="{% url 'ticket_validator' %}" class="btn btn-warning mb-2">
+                            <i class="bi bi-qr-code-scan"></i> Validate Ticket
+                        </a>
+                        <a href="{% url 'manage_announcements' %}" class="btn btn-secondary">
+                            <i class="bi bi-megaphone"></i> Manage Announcements
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    Quick Stats
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Total Events</span>
+                            <span class="badge bg-primary">{{ events.count }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Active Tickets</span>
+                            <span class="badge bg-success">{{ total_tickets }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Active Tokens</span>
+                            <span class="badge bg-info">{{ active_tokens_count }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    Event Management
+                </div>
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Event Name</th>
+                                <th>Date</th>
+                                <th>Tickets</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for event in events %}
+                            <tr>
+                                <td>{{ event.name }}</td>
+                                <td>{{ event.date|date:"M d, Y" }}</td>
+                                <td>
+                                    <span class="badge bg-primary">{{ event.tickets.count }}</span>
+                                </td>
+                                <td>
+                                    <div class="btn-group">
+                                        <a href="{% url 'edit_event' event.id %}" 
+                                           class="btn btn-sm btn-outline-primary"
+                                           data-bs-toggle="tooltip" title="Edit Event">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{% url 'delete_event' event.id %}" 
+                                           class="btn btn-sm btn-outline-danger"
+                                           data-bs-toggle="tooltip" title="Delete Event">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize Bootstrap tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    })
+})
+</script>
+{% endblock %}

@@ -1,0 +1,613 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Ticket Validator{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'ticket_validator.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="validator-container">
+    <h1 class="text-center mb-4">Ticket Validator</h1>
+    
+    <div class="scanner-area" id="scannerArea" tabindex="0" aria-label="QR code scanner area">
+        <div class="scanner-icon">
+            <i class="fas fa-qrcode" aria-hidden="true"></i>
+        </div>
+        <h3>Scan Ticket QR Code</h3>
+        <p class="text-muted">or enter code manually below</p>
+        
+        <!-- Camera Selection Dropdown -->
+        <div class="camera-controls mb-3">
+            <div class="input-group">
+                <select id="camera-selector" class="form-select" aria-label="Select camera" disabled>
+                    <option value="" selected>Select a camera...</option>
+                </select>
+                <button id="refresh-cameras-btn" class="btn btn-outline-secondary" type="button" title="Refresh camera list">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="d-flex justify-content-center gap-2 mt-2">
+                <button id="start-camera-btn" class="btn btn-outline-primary" aria-label="Start camera for QR scanning">
+                    <i class="fas fa-play me-1"></i> Start Camera
+                </button>
+                <button id="stop-camera-btn" class="btn btn-outline-danger" aria-label="Stop camera for QR scanning" style="display:none;">
+                    <i class="fas fa-stop me-1"></i> Stop Camera
+                </button>
+                <button id="switch-camera-btn" class="btn btn-outline-secondary" aria-label="Switch camera" style="display:none;">
+                    <i class="fas fa-sync-alt me-1"></i> Switch Camera
+                </button>
+            </div>
+        </div>
+        
+        <div id="qr-reader" style="width: 100%; max-width: 500px; margin: 0 auto;"></div>
+        
+        <div class="camera-status mt-2 text-center">
+            <small id="camera-status-text" class="text-muted">Camera not started</small>
+        </div>
+    </div>
+    
+    <div class="form-group">
+        <input type="text" id="manual-code" class="form-control" placeholder="Enter ticket code manually" aria-label="Enter ticket code manually">
+        <button id="validate-btn" class="btn btn-primary btn-block" aria-label="Validate Ticket">Validate Ticket</button>
+    </div>
+
+    <hr class="my-4">
+
+    <div class="form-group mt-3">
+        <h4 class="text-center mb-3">Or Upload QR Code Image</h4>
+        <input type="file" id="qr-image-input" class="form-control mb-2" accept="image/*" aria-label="Upload QR code image">
+        <button id="validate-image-btn" class="btn btn-secondary btn-block" aria-label="Validate Uploaded QR Code">Validate from Image</button>
+    </div>
+    {% if user.is_staff %}
+    <div class="mt-4 text-center">
+        <a href="/admin/" class="btn btn-link">Go to Admin Panel</a>
+    </div>
+    {% endif %}
+    
+    <div id="result" class="result">
+        <div class="status-icon"></div>
+        <h3 id="result-title" class="text-center"></h3>
+        <div id="result-details"></div>
+    </div>
+    
+    <!-- Audio elements for feedback -->
+    <audio id="success-sound" preload="auto">
+        <source src="{% static 'sounds/success.mp3' %}" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <audio id="error-sound" preload="auto">
+        <source src="{% static 'sounds/error.mp3' %}" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    {% load static %}
+    <script src="{% static 'html5-qrcode.min.js' %}"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .camera-controls {
+            max-width: 500px;
+            margin: 0 auto 1rem;
+        }
+        #qr-reader {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        #camera-selector {
+            max-width: 300px;
+        }
+        .camera-status {
+            min-height: 20px;
+        }
+        .btn i {
+            pointer-events: none;
+        }
+    </style>
+<script>
+$(document).ready(function() {
+    // DOM Elements
+    const scannerArea = $('#scannerArea');
+    const manualCode = $('#manual-code');
+    const validateBtn = $('#validate-btn');
+    const resultDiv = $('#result');
+    const resultTitle = $('#result-title');
+    const resultDetails = $('#result-details');
+    const startCameraBtn = $('#start-camera-btn');
+    const stopCameraBtn = $('#stop-camera-btn');
+    const switchCameraBtn = $('#switch-camera-btn');
+    const refreshCamerasBtn = $('#refresh-cameras-btn');
+    const cameraSelector = $('#camera-selector');
+    const cameraStatusText = $('#camera-status-text');
+    const qrReader = $('#qr-reader');
+    
+    // State variables
+    let html5QrCode = null;
+    let isScanning = false;
+    let availableCameras = [];
+    let currentCameraIndex = -1;
+
+    function playSound(isSuccess) {
+        const soundId = isSuccess ? 'success-sound' : 'error-sound';
+        const audioElement = document.getElementById(soundId);
+
+        if (audioElement) {
+            // Ensure the audio is loaded enough to play
+            if (audioElement.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+                audioElement.currentTime = 0; // Reset time
+                const playPromise = audioElement.play();
+
+                if (playPromise !== undefined) {
+                    playPromise.then(_ => {
+                        // console.log(`Sound ${soundId} played successfully.`);
+                    }).catch(error => {
+                        console.error(`Error playing sound '${soundId}':`, error);
+                        console.error(`Audio element for ${soundId}: readyState=${audioElement.readyState}, networkState=${audioElement.networkState}, error=${JSON.stringify(audioElement.error)}, src=${audioElement.currentSrc}`);
+                        if (audioElement.error && audioElement.error.code === MediaError.MEDIA_ERR_DECODE) {
+                            console.error("This might be due to a corrupted audio file or an unsupported audio format for the " + soundId + ". Please verify the audio file.");
+                        } else if (audioElement.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
+                            console.error("The audio source for " + soundId + " could not be found or is not reachable.");
+                        }
+                    });
+                }
+            } else {
+                // If not enough data, wait for it, then try to play
+                audioElement.addEventListener('canplaythrough', () => {
+                    audioElement.currentTime = 0;
+                    audioElement.play().catch(error => {
+                         console.error(`Error playing sound '${soundId}' (after canplaythrough):`, error);
+                    });
+                }, { once: true }); // Play only once when ready
+                 console.warn(`Audio for ${soundId} not ready (readyState: ${audioElement.readyState}). Will attempt to play when 'canplaythrough' event fires.`);
+            }
+        } else {
+            console.error(`Audio element with ID '${soundId}' not found.`);
+        }
+    }
+
+    function showResult(isValid, data) {
+        console.log("showResult called with: isValid=", isValid, "data=", data);
+        resultDiv.removeClass('valid invalid').hide();
+        if (isValid) {
+            resultDiv.addClass('valid');
+            resultTitle.html('<i class="fas fa-check-circle"></i> Valid Ticket');
+            resultDetails.html(`
+                <p><strong>Event:</strong> ${data.event}</p>
+                <p><strong>Date:</strong> ${data.event_date}</p>
+                <p><strong>Ticket Holder:</strong> ${data.user}</p>
+                <p><strong>Status:</strong> ${data.status}</p>
+                <p class="text-success">${data.message || 'Access granted!'}</p>
+            `);
+            playSound(true);
+        } else {
+            resultDiv.addClass('invalid');
+            resultTitle.html('<i class="fas fa-times-circle"></i> Invalid Ticket');
+            resultDetails.html(`
+                <p>${data.message || 'This ticket is not valid for entry.'}</p>
+                ${data.status ? `<p><strong>Status:</strong> ${data.status}</p>` : ''}
+            `);
+            playSound(false);
+        }
+        resultDiv.slideDown();
+    }
+
+    function validateTicket(code) {
+        if (!code) return;
+        
+        // Extract just the code if it's in the format "Ticket ID: X, Code: Y"
+        const codeMatch = code.match(/Code:\s*([^,)]+)/i);
+        const cleanCode = codeMatch ? codeMatch[1].trim() : code.trim();
+        
+        if (!cleanCode) return;
+        
+        scannerArea.addClass('active');
+        
+        // Show loading state
+        resultDiv.hide().removeClass('valid invalid');
+        resultTitle.html('<i class="fas fa-spinner fa-spin"></i> Validating...');
+        resultDetails.html('<p>Please wait while we validate your ticket...</p>');
+        resultDiv.show();
+        
+        // Clear any previous timeout
+        if (window.scanTimeout) {
+            clearTimeout(window.scanTimeout);
+        }
+        
+        $.ajax({
+            url: '{% url "validate_ticket_api" %}',
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json; charset=utf-8'
+            },
+            data: JSON.stringify({ code: cleanCode }),
+            success: function(response) {
+                console.log("validateTicket AJAX success. Response:", response);
+                if (response && response.status === 'success' && response.ticket) {
+                    console.log("Calling showResult with: isValid=", response.ticket.is_valid, "ticketData=", response.ticket);
+                    showResult(response.ticket.is_valid, response.ticket);
+                } else if (response && response.message) {
+                    console.log("Calling showResult (success false due to response.message) with: isValid=false, data=", { message: response.message });
+                    showResult(false, { message: response.message });
+                } else {
+                    console.error("validateTicket AJAX success, but response format is unexpected:", response);
+                    showResult(false, { message: 'Received an unexpected response from the server.' });
+                }
+            },
+            error: function(xhr) {
+                console.error("validateTicket AJAX error. XHR status:", xhr.status, "Response Text:", xhr.responseText);
+                let errorMsg = 'An error occurred while validating the ticket.';
+                let responseJson = null;
+                try {
+                    if (xhr.responseText) responseJson = JSON.parse(xhr.responseText);
+                    if (responseJson && responseJson.message) {
+                        errorMsg = responseJson.message;
+                    } else if (xhr.statusText) {
+                        errorMsg = `Error: ${xhr.status} ${xhr.statusText}`;
+                    }
+                } catch (e) {
+                    console.warn("Could not parse JSON from error response.", e);
+                     if (xhr.statusText && xhr.status !== 0) errorMsg = `Error: ${xhr.status} ${xhr.statusText}`;
+                     else if (!navigator.onLine) errorMsg = "Network error: You might be offline.";
+                }
+                console.log("Calling showResult (AJAX error) with: isValid=false, data=", { message: errorMsg });
+                showResult(false, { message: errorMsg });
+            },
+            complete: function(xhr, status) {
+                console.log("validateTicket AJAX complete. Status:", status, "XHR:", xhr);
+                scannerArea.removeClass('active');
+                manualCode.val('');
+            }
+        });
+    }
+
+    // QR Code Scanner
+    function startQRScanner() {
+        if (isScanning) return;
+        
+        // Initialize the scanner
+        html5QrCode = new Html5Qrcode("qr-reader");
+        
+        // Configuration for the scanner
+        const config = { 
+            fps: 10,
+            qrbox: 250,
+            aspectRatio: 1.0
+        };
+        
+        // Start the scanner
+        html5QrCode.start(
+            { facingMode: "environment" }, // Use back camera
+            config,
+            onScanSuccess, // Callback for successful scans
+            onScanError   // Callback for scan errors
+        ).then(() => {
+            isScanning = true;
+            qrReader.show();
+            startCameraBtn.hide();
+            stopCameraBtn.show();
+        }).catch(err => {
+            console.error("Error starting scanner:", err);
+            alert("Error accessing camera. Please ensure you've granted camera permissions.");
+        });
+    }
+    
+    function stopQRScanner() {
+        if (html5QrCode && isScanning) {
+            html5QrCode.stop().then(() => {
+                html5QrCode.clear();
+                html5QrCode = null;
+                isScanning = false;
+                qrReader.hide();
+                startCameraBtn.show();
+                stopCameraBtn.hide();
+            }).catch(err => {
+                console.error("Error stopping scanner:", err);
+            });
+        }
+    }
+    
+    function onScanSuccess(decodedText, decodedResult) {
+        console.log(`QR Code Successfully Scanned! Decoded Text: ${decodedText}`, decodedResult);
+
+        // Extract just the code if it's in the format "Ticket ID: X, Code: Y" or similar
+        let cleanCode = decodedText.trim();
+        const codeMatch = decodedText.match(/Code:\s*([^,()\s]+)/i); // Regex to find 'Code: ACTUAL_CODE'
+        if (codeMatch && codeMatch[1]) {
+            cleanCode = codeMatch[1].trim();
+        } else {
+            // Fallback: if no 'Code:' prefix, try to extract from common QR formats or use as is
+            // E.g., if QR is just the code itself, or a URL containing the code as a query param
+            // This part might need adjustment based on your exact QR code content variations
+            const urlParams = new URLSearchParams(decodedText.split('?')[1]);
+            if (urlParams.has('ticket_code')) { // Example: if URL is like ...?ticket_code=XYZ
+                cleanCode = urlParams.get('ticket_code');
+            } // else, it will use the full decodedText as trimmed
+        }
+        
+        console.log(`Cleaned code for validation: ${cleanCode}`);
+
+        if (cleanCode) {
+            // For file uploads, always attempt validation.
+            // For camera scans, only validate if no result is visible or no validation is in progress.
+            const cameFromFile = decodedResult && decodedResult.resultType === "file_scan_success";
+            if (cameFromFile || (!resultDiv.is(':visible') || resultDiv.find('.fa-spinner').length === 0)) {
+                validateTicket(cleanCode);
+                // If it came from the camera AND you want to stop after one scan, you'd call stopQRScanner() here.
+                // For now, live camera uses continuous scan mode.
+            } else {
+                console.log("Validation skipped (camera scan): result already visible or validation in progress.");
+            }
+        }
+    }
+    
+    function onScanError(errorMessage) {
+        // Handle scan errors if needed
+        // Don't show error messages for empty scans
+        if (errorMessage && !errorMessage.includes('NotFoundException')) {
+            console.warn('QR Code scan error:', errorMessage);
+        }
+    }
+    // Camera Management Functions
+    async function enumerateCameras() {
+        try {
+            // Clear existing options
+            cameraSelector.empty().append('<option value="">Loading cameras...</option>');
+            cameraSelector.prop('disabled', true);
+            
+            // Request camera access first
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            // Stop the stream immediately after getting permission
+            stream.getTracks().forEach(track => track.stop());
+            
+            // Now enumerate devices
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            if (videoDevices.length === 0) {
+                cameraSelector.empty().append('<option value="">No cameras found</option>');
+                updateCameraStatus('No cameras found', 'text-danger');
+                return [];
+            }
+            
+            // Update camera selector
+            cameraSelector.empty();
+            videoDevices.forEach((device, index) => {
+                const label = device.label || `Camera ${index + 1}`;
+                cameraSelector.append(`<option value="${device.deviceId}">${label}</option>`);
+            });
+            
+            cameraSelector.prop('disabled', false);
+            updateCameraStatus(`${videoDevices.length} camera(s) found`, 'text-success');
+            return videoDevices;
+            
+        } catch (error) {
+            console.error('Error accessing camera:', error);
+            cameraSelector.empty().append('<option value="">Error accessing camera</option>');
+            updateCameraStatus('Error accessing camera: ' + error.message, 'text-danger');
+            return [];
+        }
+    }
+    
+    function updateCameraStatus(message, cssClass = '') {
+        cameraStatusText.text(message).removeClass('text-success text-danger').addClass(cssClass);
+    }
+    
+    async function startCamera(deviceId = null) {
+        if (isScanning) {
+            await stopQRScanner();
+        }
+        
+        try {
+            updateCameraStatus('Starting camera...', 'text-info');
+            
+            // If no specific device ID is provided, use the selected one
+            if (!deviceId && cameraSelector.val()) {
+                deviceId = cameraSelector.val();
+            }
+            
+            const config = {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0
+            };
+            
+            if (deviceId) {
+                config.videoConstraints = {
+                    deviceId: { exact: deviceId },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'environment'
+                };
+            }
+            
+            html5QrCode = new Html5Qrcode("qr-reader");
+            
+            await html5QrCode.start(
+                deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "environment" },
+                config,
+                onScanSuccess,
+                onScanError
+            );
+            
+            isScanning = true;
+            qrReader.show();
+            startCameraBtn.hide();
+            stopCameraBtn.show();
+            switchCameraBtn.show();
+            cameraSelector.prop('disabled', true);
+            refreshCamerasBtn.prop('disabled', true);
+            
+            // Update status with current camera info
+            const selectedOption = cameraSelector.find('option:selected');
+            updateCameraStatus(`Using: ${selectedOption.text() || 'Default camera'}`, 'text-success');
+            
+        } catch (error) {
+            console.error('Error starting camera:', error);
+            updateCameraStatus('Error starting camera: ' + error.message, 'text-danger');
+            isScanning = false;
+            qrReader.hide();
+            startCameraBtn.show();
+            stopCameraBtn.hide();
+            switchCameraBtn.hide();
+            cameraSelector.prop('disabled', false);
+            refreshCamerasBtn.prop('disabled', false);
+        }
+    }
+    
+    async function stopQRScanner() {
+        if (!isScanning || !html5QrCode) return;
+        
+        try {
+            await html5QrCode.stop();
+            updateCameraStatus('Camera stopped', 'text-muted');
+        } catch (error) {
+            console.error('Error stopping scanner:', error);
+            updateCameraStatus('Error stopping camera', 'text-danger');
+        } finally {
+            isScanning = false;
+            qrReader.hide();
+            startCameraBtn.show();
+            stopCameraBtn.hide();
+            switchCameraBtn.hide();
+            cameraSelector.prop('disabled', false);
+            refreshCamerasBtn.prop('disabled', false);
+            html5QrCode = null;
+        }
+    }
+    
+    async function switchCamera() {
+        if (!availableCameras.length) {
+            availableCameras = await enumerateCameras();
+            if (availableCameras.length < 2) {
+                updateCameraStatus('Only one camera available', 'text-warning');
+                return;
+            }
+        }
+        
+        currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+        const nextCamera = availableCameras[currentCameraIndex];
+        
+        // Update the selector to match the current camera
+        cameraSelector.val(nextCamera.deviceId);
+        
+        // Restart with the new camera
+        await startCamera(nextCamera.deviceId);
+    }
+    
+    // Initialize UI
+    qrReader.hide();
+    stopCameraBtn.hide();
+    switchCameraBtn.hide();
+    
+    // Initialize camera list when page loads
+    enumerateCameras().then(cameras => {
+        availableCameras = cameras;
+        if (cameras.length > 0) {
+            cameraSelector.prop('disabled', false);
+            updateCameraStatus(`${cameras.length} camera(s) found`, 'text-success');
+            
+            // If there's only one camera, select it by default
+            if (cameras.length === 1) {
+                cameraSelector.val(cameras[0].deviceId);
+            }
+        }
+    });
+    
+    // Event Handlers
+    startCameraBtn.on('click', async function(e) {
+        e.preventDefault();
+        if (!cameraSelector.val() && availableCameras.length > 0) {
+            // If no camera is selected but cameras are available, use the first one
+            cameraSelector.val(availableCameras[0].deviceId);
+        }
+        await startCamera();
+    });
+    
+    stopCameraBtn.on('click', async function(e) {
+        e.preventDefault();
+        await stopQRScanner();
+    });
+    
+    switchCameraBtn.on('click', async function(e) {
+        e.preventDefault();
+        await switchCamera();
+    });
+    
+    refreshCamerasBtn.on('click', async function(e) {
+        e.preventDefault();
+        $(this).find('i').addClass('fa-spin');
+        availableCameras = await enumerateCameras();
+        $(this).find('i').removeClass('fa-spin');
+    });
+    
+    cameraSelector.on('change', function() {
+        if ($(this).val()) {
+            startCameraBtn.prop('disabled', false);
+        } else {
+            startCameraBtn.prop('disabled', true);
+        }
+    });
+    
+    // Auto-start camera if there's a saved preference
+    const savedCameraId = localStorage.getItem('preferredCameraId');
+    if (savedCameraId) {
+        cameraSelector.val(savedCameraId);
+        // Start camera automatically if a preference was saved
+        startCamera(savedCameraId);
+    }
+    
+    // Save camera preference when changed
+    cameraSelector.on('change', function() {
+        const selectedCameraId = $(this).val();
+        if (selectedCameraId) {
+            localStorage.setItem('preferredCameraId', selectedCameraId);
+        }
+    });
+    
+    // Clean up camera on page unload
+    $(window).on('beforeunload', function() {
+        if (isScanning && html5QrCode) {
+            html5QrCode.stop();
+        }
+    });
+    
+    // Function to get CSRF token from cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    // Accessibility: focus on manual input when scanner area is clicked
+    scannerArea.on('click keypress', function(e) {
+        if (e.type === 'click' || e.key === 'Enter' || e.key === ' ') {
+            manualCode.focus();
+        }
+    });
+    validateBtn.on('click', function() {
+        validateTicket(manualCode.val().trim());
+    });
+    manualCode.on('keypress', function(e) {
+        if (e.which === 13) {
+            validateTicket(manualCode.val().trim());
+            return false;
+        }
+    });
+});
+</script>
+{% endblock %}

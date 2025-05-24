@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Create Event{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0">Create New Event</h4>
+            </div>
+            <div class="card-body">
+                <form method="post" class="row g-3">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label for="name" class="form-label">Event Name</label>
+                        <input type="text" name="name" id="name" 
+                               class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="date" class="form-label">Event Date & Time</label>
+                        <input type="datetime-local" name="date" id="date" 
+                               class="form-control" required>
+                    </div>
+                    <div class="col-12">
+                        <label for="location" class="form-label">Location</label>
+                        <input type="text" name="location" id="location" 
+                               class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="price" class="form-label">Ticket Price</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" name="price" id="price" 
+                                   class="form-control" step="0.01" min="0" required>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="ticket_count" class="form-label">Total Tickets</label>
+                        <input type="number" name="ticket_count" id="ticket_count" 
+                               class="form-control" min="1" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="max_purchase" class="form-label">Max per User</label>
+                        <input type="number" name="max_purchase" id="max_purchase" 
+                               class="form-control" min="1" value="5" required>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-calendar-event me-2"></i>
+                            Create Event
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

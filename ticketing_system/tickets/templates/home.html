@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Welcome to Event Ticket Management{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <h1 class="display-4 text-primary mb-4">
+                <i class="bi bi-ticket-perforated"></i> Welcome to Event Ticket Management
+            </h1>
+            <p class="lead mb-4">
+                Your premier destination for event tickets and management
+            </p>
+            
+            {% if user.is_authenticated %}
+                <a href="{% url 'dashboard' %}" class="btn btn-primary btn-lg">
+                    Go to Dashboard
+                </a>
+            {% else %}
+                <div class="d-grid gap-3 d-sm-block">
+                    <a href="{% url 'login' %}" class="btn btn-primary btn-lg me-sm-3">
+                        <i class="bi bi-box-arrow-in-right"></i> Login
+                    </a>
+                    <a href="{% url 'register' %}" class="btn btn-outline-primary btn-lg">
+                        <i class="bi bi-person-plus"></i> Register
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

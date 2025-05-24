@@ -1,0 +1,114 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Ticket Management - {% block title %}{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{% static 'tickets/css/styles.css' %}">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="{% url 'home' %}">🎟 Event Ticket Management</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if user.is_authenticated %}
+                        {% if user.profile.role == 'staff' %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'manage_announcements' %}">
+                                <i class="bi bi-megaphone me-1"></i>Announcements
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'token_dashboard' %}">
+                                <i class="bi bi-credit-card me-1"></i>Token Dashboard
+                            </a>
+                        </li>
+                        {% endif %}
+                    {% endif %}
+                </ul>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    {% if user.is_authenticated %}
+                        <button class="btn btn-outline-light" id="theme-toggle">
+                            <i class="bi bi-moon-stars"></i>
+                        </button>
+                        <span class="text-light me-3">Welcome, {{ user.username }}</span>
+                        <form method="post" action="{% url 'logout' %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-light">Logout</button>
+                        </form>
+                    {% else %}
+                        <a href="{% url 'login' %}" class="btn btn-light">Login</a>
+                        <a href="{% url 'register' %}" class="btn btn-outline-light">Register</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-5">
+        {% include 'partials/messages.html' %}
+        {% block content %}{% endblock content %}
+    </main>
+
+    <!-- Chat Toggle Button -->
+    <button id="chat-toggle-btn" class="btn btn-primary rounded-circle p-0 shadow" style="position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; z-index: 1050; font-size: 24px;">
+        <i class="bi bi-chat-dots-fill"></i>
+    </button>
+
+    <!-- Chat Widget -->
+    <div id="chat-widget" class="d-none">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Support Chat</span>
+                <button id="close-chat" class="btn btn-sm btn-link text-light">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div id="chat-messages" class="card-body"></div>
+            <div class="card-footer">
+                <div class="input-group">
+                    <input type="text" id="user-input" class="form-control" placeholder="Type your message...">
+                    <button id="send-message" class="btn btn-primary">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="purchaseToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-success text-white">
+                <strong class="me-auto">Success!</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body">
+                Ticket purchased successfully!
+            </div>
+        </div>
+        
+        <div id="errorToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header bg-danger text-white">
+                <strong class="me-auto">Error!</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="errorMessage">
+                Error message placeholder
+            </div>
+        </div>
+    </div>
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.0.9/dist/html5-qrcode.min.js"></script>
+    {% block extra_js %}{% endblock extra_js %}
+    <script src="{% static 'tickets/js/scripts.js' %}"></script>
+    {% block tickets_js %}{% endblock tickets_js %}
+</body>
+</html>

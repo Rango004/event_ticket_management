@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">{% if form.instance.id %}Edit{% else %}Create New{% endif %} Announcement</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title</label>
+                            <input type="text" class="form-control {% if form.title.errors %}is-invalid{% endif %}" 
+                                   id="title" name="title" value="{{ form.title.value|default:'' }}" required>
+                            {% for error in form.title.errors %}
+                                <div class="invalid-feedback">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="content" class="form-label">Content</label>
+                            <textarea class="form-control {% if form.content.errors %}is-invalid{% endif %}" 
+                                     id="content" name="content" rows="5" required>{{ form.content.value|default:'' }}</textarea>
+                            {% for error in form.content.errors %}
+                                <div class="invalid-feedback">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="priority" class="form-label">Priority</label>
+                                <select class="form-select {% if form.priority.errors %}is-invalid{% endif %}" 
+                                       id="priority" name="priority" required>
+                                    {% for value, display in form.fields.priority.choices %}
+                                        <option value="{{ value }}" {% if form.priority.value == value %}selected{% endif %}>
+                                            {{ display }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                                {% for error in form.priority.errors %}
+                                    <div class="invalid-feedback">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="valid_until" class="form-label">Valid Until (optional)</label>
+                                <input type="datetime-local" class="form-control {% if form.valid_until.errors %}is-invalid{% endif %}" 
+                                       id="valid_until" name="valid_until" 
+                                       value="{{ form.valid_until.value|date:'Y-m-d\TH:i'|default:'' }}">
+                                {% for error in form.valid_until.errors %}
+                                    <div class="invalid-feedback">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        
+                        <div class="form-check mb-4">
+                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active" 
+                                  {% if form.is_active.value %}checked{% endif %}>
+                            <label class="form-check-label" for="is_active">
+                                Active
+                            </label>
+                        </div>
+                        
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'manage_announcements' %}" class="btn btn-outline-secondary me-md-2">
+                                <i class="fas fa-arrow-left"></i> Back to List
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> {% if form.instance.id %}Update{% else %}Create{% endif %} Announcement
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

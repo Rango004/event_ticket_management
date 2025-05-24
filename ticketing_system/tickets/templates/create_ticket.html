@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Create Ticket{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Generate New Ticket</h4>
+            </div>
+            <div class="card-body">
+                <form id="ticket-form" class="ajax-form">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">Select Event</label>
+                        <select name="event" class="form-select" required>
+                            {% for event in events %}
+                            <option value="{{ event.id }}">{{ event.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <span class="spinner-border spinner-border-sm d-none" 
+                              role="status" aria-hidden="true"></span>
+                        Generate Ticket
+                    </button>
+                </form>
+                <div id="qr-code" class="mt-4 text-center"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
