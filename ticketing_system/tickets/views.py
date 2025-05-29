@@ -386,12 +386,13 @@ def send_message(request):
         
         # Get bot response with language context and user info
         logger.info('[Chat] Calling chatbot_service.generate_reply()')
-        bot_response = chatbot_service.generate_reply(
+        bot_response, detected_language = chatbot_service.generate_reply(
             user_message=message,
             language=language,  # Pass the language to the chatbot
             request=request    # Pass the request object for user context
         )
         logger.info(f'[Chat] Received bot response: {bot_response[:200]}...')
+        logger.info(f'[Chat] Detected language: {detected_language}')
         
         # Save the message and response with language context
         logger.info('[Chat] Saving message to database')
@@ -400,7 +401,7 @@ def send_message(request):
             user=request.user,
             message=message,
             response=bot_response,
-            language=language or 'en'  # Store the language used
+            language=detected_language or language or 'en'  # Store the detected language or fallback to provided or English
         )
         logger.info(f'[Chat] Message saved with ID: {chat_message.id}')
         
@@ -408,7 +409,8 @@ def send_message(request):
             'status': 'success',
             'reply': bot_response,
             'timestamp': chat_message.timestamp.strftime("%Y-%m-%d %H:%M"),
-            'language': language or 'en'  # Include language in response
+            'language': detected_language or language or 'en',  # Use detected language with fallback
+            'detected_language': detected_language  # Always include the detected language
         }
         logger.info(f'[Chat] Sending response: {json.dumps(response_data)[:200]}...')
         

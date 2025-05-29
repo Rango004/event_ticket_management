@@ -146,7 +146,7 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
         **kwargs: Additional keyword arguments
         
     Returns:
-        str: The generated response or error message in the appropriate language
+        tuple: (response_text, language_code) - The generated response and detected language
     """
     # Track conversation context
     context = kwargs.get('context', {})
@@ -158,16 +158,20 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
     # Validate input
     if not user_message or not isinstance(user_message, str):
         logger_service.error('❌ Invalid user message')
-        return "I'm sorry, I didn't receive a valid message. Please try again."
+        return "I'm sorry, I didn't receive a valid message. Please try again.", 'en'
     
     # Detect language if not provided
     if language is None:
         language = detect_language(user_message)
+        logger_service.info(f'🔍 Detected language: {language}')
     
     # Ensure language is valid, default to English if not
     if language not in LANGUAGE_PROMPTS:
         logger_service.warning(f'⚠️ Unsupported language: {language}. Defaulting to English.')
         language = 'en'
+    
+    # Store detected language in context
+    context['detected_language'] = language
     
     # Update context with detected language
     context['language'] = language
@@ -221,9 +225,9 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
         error_msg = '❌ OpenAI client not initialized. Chat functionality is disabled.'
         logger_service.error(error_msg)
         
-        # Return error in the detected language
+        # Return error in the detected language with language code
         return common_responses['error'] + ' ' + \
-               'The chatbot is not properly configured. Please try again later.'
+               'The chatbot is not properly configured. Please try again later.', language
     
     # Handle common queries without API call when possible
     user_msg_lower = user_message.lower().strip()
@@ -269,16 +273,16 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
     if any(word in user_msg_lower for word in ['hello', 'hi', 'hey', 'hola', 'salam', 'selam', 'kushe', 'sannu']):
         if language == 'am':
             if user_tickets:
-                return f"ሰላም! እርስዎ {len(user_tickets)} አይነት ቲኬቶች አሉዎት። እንዴት ልትረዱኝ እችላለሁ?"
-            return "ሰላም! በቲኬቶች እና ክስተቶች ላይ እርዳት እችላለሁ። እባክዎ ጥያቄዎን ይግለጹ።"
+                return f"ሰላም! እርስዎ {len(user_tickets)} አይነት ቲኬቶች አሉዎት። እንዴት ልትረዱኝ እችላለሁ?", language
+            return "ሰላም! በቲኬቶች እና ክስተቶች ላይ እርዳት እችላለሁ። እባክዎ ጥያቄዎን ይግለጹ።", language
         elif language == 'kri':
             if user_tickets:
-                return f"Kushe! Yu gɛt {len(user_tickets)} tikit dɛn. Aw a go ɛp yu?"
-            return "Kushe! A kin ɛp yu wit tikit ɛn ivɛnt. Wetin yu want?"
+                return f"Kushe! Yu gɛt {len(user_tickets)} tikit dɛn. Aw a go ɛp yu?", language
+            return "Kushe! A kin ɛp yu wit tikit ɛn ivɛnt. Wetin yu want?", language
         else:
             if user_tickets:
-                return f"Hello! You have {len(user_tickets)} active tickets. How can I assist you today?"
-            return "Hello! I can help you with tickets and events. What would you like to know?"
+                return f"Hello! You have {len(user_tickets)} active tickets. How can I assist you today?", language
+            return "Hello! I can help you with tickets and events. What would you like to know?", language
     
     # Ticket expiration queries
     if any(word in user_msg_lower for word in ['when my ticket expire', 'when ticket expire', 'ticket expiry', 'ticket expir']):
@@ -288,17 +292,17 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
             days_left = (event.date - timezone.now()).days
             
             if language == 'am':
-                return f"የእርስዎ ቲኬት ለ '{event.name}' በ {event.date.strftime('%B %d, %Y')} ይዘጋል። {'ቀናት' if days_left > 1 else 'ቀን'} {days_left} ብቻ ቀርቷል!"
+                return f"የእርስዎ ቲኬት ለ '{event.name}' በ {event.date.strftime('%B %d, %Y')} ይዘጋል። {'ቀናት' if days_left > 1 else 'ቀን'} {days_left} ብቻ ቀርቷል!", language
             elif language == 'kri':
-                return f"Yu tikit fɔ '{event.name}' go don na {event.date.strftime('%B %d, %Y')}. I rɛmɛn jɔs {days_left} {'dɛn' if days_left > 1 else 'dey'}!"
+                return f"Yu tikit fɔ '{event.name}' go don na {event.date.strftime('%B %d, %Y')}. I rɛmɛn jɔs {days_left} {'dɛn' if days_left > 1 else 'dey'}!", language
             else:
-                return f"Your ticket for '{event.name}' expires on {event.date.strftime('%B %d, %Y')}. Only {days_left} {'days' if days_left > 1 else 'day'} left!"
+                return f"Your ticket for '{event.name}' expires on {event.date.strftime('%B %d, %Y')}. Only {days_left} {'days' if days_left > 1 else 'day'} left!", language
         else:
             if language == 'am':
-                return "ምንም አይነት ተገቢ ያልሆኑ ቲኬቶች አልተገኙም።"
+                return "ምንም አይነት ተገቢ ያልሆኑ ቲኬቶች አልተገኙም።", language
             elif language == 'kri':
-                return "A nɔ si ɛni valid tikit we yu gɛt."
-            return "You don't have any valid tickets at the moment."
+                return "A nɔ si ɛni valid tikit we yu gɛt.", language
+            return "You don't have any valid tickets at the moment.", language
     
     # Event-related queries
     if any(word in user_msg_lower for word in ['event', 'events', 'ticket', 'tickets', 'upcoming', 'available']):
@@ -308,23 +312,23 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
                 response = f"የሚቀጥለው ክስተት '{next_event.name}' በ {next_event.date.strftime('%B %d, %Y')} በ {next_event.location} ነው።"
                 if len(available_events) > 1:
                     response += f" አጠቃላይ {len(available_events)} ክስተቶች አሉ። ለበለጠ መረጃ ይጠይቁኝ።"
-                return response
+                return response, language
             elif language == 'kri':
                 response = f"Di nɛks ivɛnt na '{next_event.name}' na {next_event.date.strftime('%B %d, %Y')} na {next_event.location}."
                 if len(available_events) > 1:
                     response += f" Wi gɛt {len(available_events)} difrɛn ivɛnt. Aks mi if yu want no mɔ."
-                return response
+                return response, language
             else:
                 response = f"The next event is '{next_event.name}' on {next_event.date.strftime('%B %d, %Y')} at {next_event.location}."
                 if len(available_events) > 1:
                     response += f" There are {len(available_events)} total events available. Ask me for more details."
-                return response
+                return response, language
         else:
             if language == 'am':
-                return "በአሁኑ ጊዜ ምንም ክስተቶች የሉም። በቅርቡ እንደገና ይመልከቱ።"
+                return "በአሁኑ ጊዜ ምንም ክስተቶች የሉም። በቅርቡ እንደገና ይመልከቱ።", language
             elif language == 'kri':
-                return "Nɔ ivɛnt de na in de now. Chɛk bak lɛta."
-            return "There are no events available at the moment. Please check back later."
+                return "Nɔ ivɛnt de na in de now. Chɛk bak lɛta.", language
+            return "There are no events available at the moment. Please check back later.", language
     
     # Help request - handle variations
     help_phrases = {
@@ -340,7 +344,7 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
             'kri': "Padi, wetin na ya palava? A kin ɛp yu wit tikit, ivɛnt, ɛn ɛni oda tin we yu nid. Wetin yu want?",
             'en': "How can I assist you today? I can help with tickets, events, or any other questions you might have. What would you like to know?"
         }
-        return responses.get(language, responses['en'])
+        return responses.get(language, responses['en']), language
     
     # Thank you responses - handle variations in all languages
     thank_phrases = {
@@ -357,7 +361,7 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
             'kri': "A de kam! A glad se a bin kin ɛp. Yu gɛt ɛni oda kɛsƐn?",
             'en': "You're welcome! Is there anything else I can assist you with?"
         }
-        return responses.get(language, responses['en'])
+        return responses.get(language, responses['en']), language
     
     @retry_on_exception(max_retries=3, initial_delay=1, backoff=2)
     def call_openai_api(messages):
@@ -443,35 +447,35 @@ def generate_reply(user_message, conversation_history=None, language=None, reque
                 }
                 bot_response = follow_up_phrases.get(language, follow_up_phrases['en']) % context['last_topic'] + bot_response
             
-            return bot_response
+            return bot_response, language
             
         except AuthenticationError as auth_err:
             error_msg = f'❌ [ChatService] Authentication error with OpenAI API. Please check your API key.'
             logger_service.error(error_msg)
             logger_service.error(f'API Key: {api_key[:5]}...{api_key[-5:]}')
-            return lang_prompts.get('error', "I'm sorry, there was an error with the chat service. Please try again later.")
+            return lang_prompts.get('error', "I'm sorry, there was an error with the chat service. Please try again later."), language
             
         except APIConnectionError as conn_err:
             error_msg = f'❌ [ChatService] Connection error with OpenAI API: {str(conn_err)}'
             logger_service.error(error_msg)
-            return "I'm having trouble connecting to the chat service. Please check your internet connection and try again."
+            return "I'm having trouble connecting to the chat service. Please check your internet connection and try again.", language
             
         except RateLimitError as rate_err:
             error_msg = f'❌ [ChatService] Rate limit exceeded for OpenAI API: {str(rate_err)}'
             logger_service.error(error_msg)
-            return "The chat service is currently experiencing high traffic. Please wait a moment and try again."
+            return "The chat service is currently experiencing high traffic. Please wait a moment and try again.", language
             
         except APIError as api_err:
             error_msg = f'❌ [ChatService] OpenAI API error: {str(api_err)}'
             logger_service.error(error_msg)
-            return "I'm sorry, there was an error processing your request. Please try again in a moment."
+            return "I'm sorry, there was an error processing your request. Please try again in a moment.", language
         
     except Exception as e:
         error_msg = f'❌ [ChatService] Unexpected error: {str(e)}'
         logger_service.error(error_msg, exc_info=True)
         logger_service.error(f'Error type: {type(e).__name__}')
         logger_service.error(f'Error details: {str(e)}')
-        return "I'm sorry, an unexpected error occurred. The administrator has been notified."
+        return "I'm sorry, an unexpected error occurred. The administrator has been notified.", language
 
 # Example usage (for testing this module directly, not used by Django view directly):
 # if __name__ == '__main__':
