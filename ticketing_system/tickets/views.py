@@ -372,6 +372,11 @@ def send_message(request):
         
         data = json.loads(body)
         message = data.get('message', '').strip()
+        language = data.get('language')  # Get language from request
+        
+        # Log the detected language
+        if language:
+            logger.info(f'[Chat] Language specified: {language}')
         
         logger.info(f'[Chat] Extracted message: "{message}"')
         
@@ -379,24 +384,31 @@ def send_message(request):
             logger.warning('[Chat] No message found in JSON data.')
             return JsonResponse({'status': 'error', 'message': 'Message is required'}, status=400)
         
-        # Get bot response
+        # Get bot response with language context and user info
         logger.info('[Chat] Calling chatbot_service.generate_reply()')
-        bot_response = chatbot_service.generate_reply(message)
+        bot_response = chatbot_service.generate_reply(
+            user_message=message,
+            language=language,  # Pass the language to the chatbot
+            request=request    # Pass the request object for user context
+        )
         logger.info(f'[Chat] Received bot response: {bot_response[:200]}...')
         
-        # Save the message and response
+        # Save the message and response with language context
         logger.info('[Chat] Saving message to database')
+        from .models import ChatMessage
         chat_message = ChatMessage.objects.create(
             user=request.user,
             message=message,
-            response=bot_response
+            response=bot_response,
+            language=language or 'en'  # Store the language used
         )
         logger.info(f'[Chat] Message saved with ID: {chat_message.id}')
         
         response_data = {
             'status': 'success',
             'reply': bot_response,
-            'timestamp': chat_message.timestamp.strftime("%Y-%m-%d %H:%M")
+            'timestamp': chat_message.timestamp.strftime("%Y-%m-%d %H:%M"),
+            'language': language or 'en'  # Include language in response
         }
         logger.info(f'[Chat] Sending response: {json.dumps(response_data)[:200]}...')
         

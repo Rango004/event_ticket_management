@@ -172,18 +172,35 @@ class Token(models.Model):
         return f"Token {self.code} - ${self.amount}"
 
 class ChatMessage(models.Model):
+    LANGUAGE_CHOICES = [
+        ('en', 'English'),
+        ('am', 'Amharic'),
+        ('kri', 'Krio'),
+    ]
+    
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     message = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
     response = models.TextField(blank=True)
+    language = models.CharField(
+        max_length=10, 
+        choices=LANGUAGE_CHOICES, 
+        default='en',
+        help_text='Language used in this message'
+    )
 
     class Meta:
         ordering = ['-timestamp']
+        verbose_name = 'Chat Message'
+        verbose_name_plural = 'Chat Messages'
 
     def mark_as_read(self):
         self.is_read = True
-        self.save()
+        self.save(update_fields=['is_read'])
+        
+    def __str__(self):
+        return f"{self.user.username} - {self.timestamp.strftime('%Y-%m-%d %H:%M')} ({self.get_language_display()})"
 
 
 @receiver(post_save, sender=User)

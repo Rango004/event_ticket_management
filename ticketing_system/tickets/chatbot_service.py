@@ -1,14 +1,54 @@
 import os
 import logging
 import traceback
-import socket
+import logging
+import json
 import time
 import random
-import requests
-from openai import OpenAI, APIError, APIConnectionError, RateLimitError, AuthenticationError
+from datetime import datetime, timedelta
+from openai import OpenAI, APIError, APIConnectionError, RateLimitError
 from django.conf import settings
+from django.utils import timezone
 from dotenv import load_dotenv
 from functools import wraps
+from .languages import LANGUAGE_PROMPTS
+
+def detect_language(text):
+    """
+    Detect the language of the input text.
+    Returns 'am' for Amharic, 'kri' for Krio, or 'en' for English (default).
+    """
+    if not text or not isinstance(text, str):
+        return 'en'
+        
+    text_lower = text.lower().strip()
+    
+    # Define language indicators for Sierra Leonean Krio
+    krio_indicators = [
+        'kushe', 'aw di go', 'aw di bɔdi', 'aw di tɛm', 'aw yu du', 'aw yu de',
+        'a de', 'i de', 'u de', 'wi de', 'una de', 'na', 'sabi', 'pikin',
+        'chop', 'boku', 'abeg', 'wetin', 'ehn', 'dem', 'wetin na', 'mek',
+        'wan', 'tink', 'nɔ', 'get', 'go', 'kam', 'si', 'tu', 'tri',
+        'aw yu de du', 'aw u de', 'tenki', 'tɛnki', 'a bɛg'
+    ]
+    
+    amharic_indicators = [
+        'ሰላም', 'እንዴት ነህ', 'እንዴት ነሽ', 'እርዳት', 'አመሰግናለሁ', 'አይነት', 'ቲኬት',
+        'ክስተት', 'ቀን', 'ስም', 'አድራሻ', 'ዋጋ', 'ገንዘብ', 'ቦታ', 'ጊዜ', 'ስለዚህ'
+    ]
+    
+    # Check for Krio
+    krio_word_count = sum(1 for word in krio_indicators if word in text_lower)
+    if krio_word_count > 0:
+        return 'kri'
+        
+    # Check for Amharic
+    amharic_word_count = sum(1 for word in amharic_indicators if word in text_lower)
+    if amharic_word_count > 0:
+        return 'am'
+    
+    # Default to English
+    return 'en'
 
 def retry_on_exception(max_retries=3, initial_delay=1, backoff=2, exceptions=(APIError, APIConnectionError, RateLimitError)):
     """
@@ -82,81 +122,258 @@ else:
 
 # Get model from settings or use default
 OPENAI_MODEL = getattr(settings, 'OPENAI_MODEL', 'gpt-3.5-turbo')
-SYSTEM_PROMPT = getattr(settings, 'CHATBOT_SYSTEM_PROMPT', 
-    "You are a helpful assistant for a ticketing system. "
-    "You help users with their support tickets, answer questions, and provide information. "
-    "Be concise and helpful in your responses.")
+DEFAULT_LANGUAGE = getattr(settings, 'DEFAULT_LANGUAGE', 'en')
 
-def generate_reply(user_message, conversation_history=None):
+# Default system prompt (can be overridden in settings)
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful assistant for a ticketing system. "
+    "You help users with ticket purchases, event information, and support. "
+    "Be concise and helpful in your responses."
+)
+
+# Get system prompt from settings or use default
+SYSTEM_PROMPT = getattr(settings, 'CHATBOT_SYSTEM_PROMPT', DEFAULT_SYSTEM_PROMPT)
+
+def generate_reply(user_message, conversation_history=None, language=None, request=None, **kwargs):
     """
-    Generate a response to the user's message using the OpenAI API.
+    Generate a response to the user's message using the OpenAI API with multilingual support.
     
     Args:
         user_message (str): The user's message
         conversation_history (list, optional): List of previous messages in the conversation
+        language (str, optional): Language code ('en', 'am', or 'kri'). If None, auto-detect.
+        request: The HTTP request object for user context
+        **kwargs: Additional keyword arguments
         
     Returns:
-        str: The generated response or error message
+        str: The generated response or error message in the appropriate language
     """
+    # Track conversation context
+    context = kwargs.get('context', {})
+    # Log the start of the function
     logger_service.info('=' * 80)
     logger_service.info('🔄 [ChatService] generate_reply called')
     logger_service.info(f'📩 Message: "{user_message[:200]}" (length: {len(user_message)})')
+    
+    # Validate input
+    if not user_message or not isinstance(user_message, str):
+        logger_service.error('❌ Invalid user message')
+        return "I'm sorry, I didn't receive a valid message. Please try again."
+    
+    # Detect language if not provided
+    if language is None:
+        language = detect_language(user_message)
+    
+    # Ensure language is valid, default to English if not
+    if language not in LANGUAGE_PROMPTS:
+        logger_service.warning(f'⚠️ Unsupported language: {language}. Defaulting to English.')
+        language = 'en'
+    
+    # Update context with detected language
+    context['language'] = language
+    logger_service.info(f'🌐 Language set to: {language}')
+    
+    # Get language-specific prompts and responses
+    lang_data = LANGUAGE_PROMPTS[language]
+    system_prompt = lang_data['system']
+    
+    # Add context to system prompt
+    context_info = []
+    if 'last_topic' in context:
+        context_info.append(f"The user was previously asking about {context['last_topic']}.")
+    if 'last_action' in context:
+        context_info.append(f"The last action was: {context['last_action']}.")
+    
+    if context_info:
+        system_prompt += " " + " ".join(context_info)
+    
+    # Add user context if available
+    user_context = ""
+    if request and hasattr(request, 'user') and request.user.is_authenticated:
+        user = request.user
+        user_context = f" The user's name is {user.get_full_name() or user.username}. "
+        
+        # Add user's tickets information if available
+        try:
+            from .models import Ticket
+            user_tickets = Ticket.objects.filter(user=user, status='PURCHASED')
+            if user_tickets.exists():
+                user_context += f"The user has {user_tickets.count()} active ticket(s). "
+        except Exception as e:
+            logger_service.warning(f'Could not fetch user tickets: {str(e)}')
+    
+    # Enhance system prompt with user context
+    system_prompt = f"{system_prompt}{user_context}"
+    
+    # Common responses in the detected language
+    common_responses = {
+        'greeting': lang_data.get('greeting', 'Hello! How can I assist you today?'),
+        'error': lang_data.get('error', 'I encountered an error processing your request.'),
+        'fallback': lang_data.get('fallback', 'I\'m not sure how to respond to that.')
+    }
+    
+    # Log language information
+    logger_service.info(f'🌐 Language: {language} ({lang_data.get("name", "Unknown")})')
+    logger_service.debug(f'System prompt: {system_prompt[:200]}...')
     
     # Check if client is properly initialized
     if not client:
         error_msg = '❌ OpenAI client not initialized. Chat functionality is disabled.'
         logger_service.error(error_msg)
         
-        # Check for API key in environment and settings
-        env_key = os.getenv('OPENAI_API_KEY')
-        settings_key = getattr(settings, 'OPENAI_API_KEY', None)
-        
-        logger_service.error('🔍 Debug Info:')
-        logger_service.error(f'  - .env file exists: {os.path.exists(".env")}')
-        logger_service.error(f'  - OPENAI_API_KEY in os.environ: {"Yes" if env_key else "No"}')
-        logger_service.error(f'  - OPENAI_API_KEY in settings: {"Yes" if settings_key else "No"}')
-        
-        if env_key:
-            logger_service.error(f'  - Environment API key length: {len(env_key)} characters')
-        if settings_key:
-            logger_service.error(f'  - Settings API key length: {len(settings_key)} characters')
-
-        # Check internet connectivity
+        # Return error in the detected language
+        return common_responses['error'] + ' ' + \
+               'The chatbot is not properly configured. Please try again later.'
+    
+    # Handle common queries without API call when possible
+    user_msg_lower = user_message.lower().strip()
+    
+    # Update context based on user message
+    if any(word in user_msg_lower for word in ['ticket', 'tickets']):
+        context['last_topic'] = 'tickets'
+    elif any(word in user_msg_lower for word in ['event', 'events']):
+        context['last_topic'] = 'events'
+    elif any(word in user_msg_lower for word in ['help', 'support']):
+        context['last_topic'] = 'help'
+    
+    # Track if this is a follow-up question
+    is_follow_up = any(word in user_msg_lower for word in ['that', 'it', 'they', 'them', 'this', 'those', 'these'])
+    if is_follow_up and 'last_topic' in context:
+        user_message = f"{context['last_topic']} - {user_message}"
+        logger_service.info(f'🔍 Detected follow-up about: {context["last_topic"]}')
+    
+    # Get user's active tickets if available
+    user_tickets = []
+    if request and hasattr(request, 'user') and request.user.is_authenticated:
         try:
-            # Test DNS resolution
-            socket.gethostbyname('api.openai.com')
-            logger_service.info('✅ Internet connectivity: DNS resolution successful')
-            
-            # Test HTTPS connection to OpenAI
-            response = requests.get('https://api.openai.com/v1/models', 
-                                 headers={'Authorization': f'Bearer {env_key}'},
-                                 timeout=5)
-            logger_service.info(f'✅ OpenAI API reachable. Status code: {response.status_code}')
-            logger_service.debug(f'Response: {response.text[:200]}...')
-            
-        except socket.gaierror:
-            logger_service.error('❌ Internet connectivity: DNS resolution failed')
-        except requests.exceptions.SSLError as e:
-            logger_service.error(f'❌ SSL Error connecting to OpenAI: {str(e)}')
-        except requests.exceptions.ConnectTimeout:
-            logger_service.error('❌ Connection to OpenAI API timed out')
-        except requests.exceptions.RequestException as e:
-            logger_service.error(f'❌ Error connecting to OpenAI API: {str(e)}')
+            from .models import Ticket
+            user_tickets = list(Ticket.objects.filter(
+                user=request.user,
+                status='PURCHASED',
+                event__date__gte=timezone.now()
+            ).select_related('event').order_by('event__date'))
         except Exception as e:
-            logger_service.error(f'❌ Unexpected error checking connectivity: {str(e)}')
+            logger_service.warning(f'Could not fetch user tickets: {str(e)}')
+    
+    # Get all available events
+    try:
+        from .models import Event
+        available_events = list(Event.objects.filter(
+            date__gte=timezone.now()
+        ).order_by('date'))
+    except Exception as e:
+        available_events = []
+        logger_service.warning(f'Could not fetch available events: {str(e)}')
+    
+    # Greeting responses
+    if any(word in user_msg_lower for word in ['hello', 'hi', 'hey', 'hola', 'salam', 'selam', 'kushe', 'sannu']):
+        if language == 'am':
+            if user_tickets:
+                return f"ሰላም! እርስዎ {len(user_tickets)} አይነት ቲኬቶች አሉዎት። እንዴት ልትረዱኝ እችላለሁ?"
+            return "ሰላም! በቲኬቶች እና ክስተቶች ላይ እርዳት እችላለሁ። እባክዎ ጥያቄዎን ይግለጹ።"
+        elif language == 'kri':
+            if user_tickets:
+                return f"Kushe! Yu gɛt {len(user_tickets)} tikit dɛn. Aw a go ɛp yu?"
+            return "Kushe! A kin ɛp yu wit tikit ɛn ivɛnt. Wetin yu want?"
+        else:
+            if user_tickets:
+                return f"Hello! You have {len(user_tickets)} active tickets. How can I assist you today?"
+            return "Hello! I can help you with tickets and events. What would you like to know?"
+    
+    # Ticket expiration queries
+    if any(word in user_msg_lower for word in ['when my ticket expire', 'when ticket expire', 'ticket expiry', 'ticket expir']):
+        if user_tickets:
+            next_ticket = user_tickets[0]  # Get the soonest ticket
+            event = next_ticket.event
+            days_left = (event.date - timezone.now()).days
             
-        return "I'm sorry, the chatbot is not properly configured. The administrator has been notified. Please try again later."
+            if language == 'am':
+                return f"የእርስዎ ቲኬት ለ '{event.name}' በ {event.date.strftime('%B %d, %Y')} ይዘጋል። {'ቀናት' if days_left > 1 else 'ቀን'} {days_left} ብቻ ቀርቷል!"
+            elif language == 'kri':
+                return f"Yu tikit fɔ '{event.name}' go don na {event.date.strftime('%B %d, %Y')}. I rɛmɛn jɔs {days_left} {'dɛn' if days_left > 1 else 'dey'}!"
+            else:
+                return f"Your ticket for '{event.name}' expires on {event.date.strftime('%B %d, %Y')}. Only {days_left} {'days' if days_left > 1 else 'day'} left!"
+        else:
+            if language == 'am':
+                return "ምንም አይነት ተገቢ ያልሆኑ ቲኬቶች አልተገኙም።"
+            elif language == 'kri':
+                return "A nɔ si ɛni valid tikit we yu gɛt."
+            return "You don't have any valid tickets at the moment."
+    
+    # Event-related queries
+    if any(word in user_msg_lower for word in ['event', 'events', 'ticket', 'tickets', 'upcoming', 'available']):
+        if available_events:
+            next_event = available_events[0]
+            if language == 'am':
+                response = f"የሚቀጥለው ክስተት '{next_event.name}' በ {next_event.date.strftime('%B %d, %Y')} በ {next_event.location} ነው።"
+                if len(available_events) > 1:
+                    response += f" አጠቃላይ {len(available_events)} ክስተቶች አሉ። ለበለጠ መረጃ ይጠይቁኝ።"
+                return response
+            elif language == 'kri':
+                response = f"Di nɛks ivɛnt na '{next_event.name}' na {next_event.date.strftime('%B %d, %Y')} na {next_event.location}."
+                if len(available_events) > 1:
+                    response += f" Wi gɛt {len(available_events)} difrɛn ivɛnt. Aks mi if yu want no mɔ."
+                return response
+            else:
+                response = f"The next event is '{next_event.name}' on {next_event.date.strftime('%B %d, %Y')} at {next_event.location}."
+                if len(available_events) > 1:
+                    response += f" There are {len(available_events)} total events available. Ask me for more details."
+                return response
+        else:
+            if language == 'am':
+                return "በአሁኑ ጊዜ ምንም ክስተቶች የሉም። በቅርቡ እንደገና ይመልከቱ።"
+            elif language == 'kri':
+                return "Nɔ ivɛnt de na in de now. Chɛk bak lɛta."
+            return "There are no events available at the moment. Please check back later."
+    
+    # Help request - handle variations
+    help_phrases = {
+        'en': ['help', 'support', 'assist', 'aid'],
+        'am': ['እርዳት', 'ድጋፍ', 'እንዴት', 'ምን ማድረግ አለብኝ'],
+        'kri': ['hep', 'sapot', 'aw', 'aw fo', 'wetin fo du']
+    }
+    
+    if any(phrase in user_msg_lower for phrase in help_phrases.get(language, [])) or \
+       any(phrase in user_msg_lower for phrases in help_phrases.values() for phrase in phrases):
+        responses = {
+            'am': "እባክዎ የተወሰነውን ጥያቄዎን ይግለጹ። በቲኬቶች፣ ክስተቶች ወይም ደረሰኞች ላይ እርዳት እችላለሁ። ምን ማድረግ ትፈልጋለህ?",
+            'kri': "Padi, wetin na ya palava? A kin ɛp yu wit tikit, ivɛnt, ɛn ɛni oda tin we yu nid. Wetin yu want?",
+            'en': "How can I assist you today? I can help with tickets, events, or any other questions you might have. What would you like to know?"
+        }
+        return responses.get(language, responses['en'])
+    
+    # Thank you responses - handle variations in all languages
+    thank_phrases = {
+        'en': ['thank', 'thanks', 'appreciate', 'grateful'],
+        'am': ['አመሰግናለሁ', 'አመሰግናለሁ', 'የተዋወርኩ'],
+        'kri': ['tenki', 'a de kam', 'a de tank', 'tank yu']
+    }
+    
+    # Check for thank you in any language
+    if any(phrase in user_msg_lower for phrase in thank_phrases.get(language, [])) or \
+       any(phrase in user_msg_lower for phrases in thank_phrases.values() for phrase in phrases):
+        responses = {
+            'am': "እናመሰግናለን! ሌላ ማድረግ የሚፈልጉት ነገር አለ?",
+            'kri': "A de kam! A glad se a bin kin ɛp. Yu gɛt ɛni oda kɛsƐn?",
+            'en': "You're welcome! Is there anything else I can assist you with?"
+        }
+        return responses.get(language, responses['en'])
     
     @retry_on_exception(max_retries=3, initial_delay=1, backoff=2)
     def call_openai_api(messages):
         """Helper function to call OpenAI API with retry logic"""
-        return client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=messages,
-            max_tokens=500,
-            temperature=0.7,
-            timeout=10  # Add timeout to prevent hanging
-        )
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                max_tokens=500,
+                temperature=0.7,
+                timeout=10  # Add timeout to prevent hanging
+            )
+            return response
+        except Exception as e:
+            logger_service.error(f'❌ Error calling OpenAI API: {str(e)}')
+            return None
 
     try:
         # Log the API key status
@@ -164,15 +381,25 @@ def generate_reply(user_message, conversation_history=None):
         logger_service.info(f'[ChatService] System prompt: {SYSTEM_PROMPT[:100]}...')
         
         # Prepare the messages list with system prompt and conversation history
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": system_prompt}]
         
-        # Add conversation history if provided
+        # Add conversation history if provided (limit to last 5 messages for context)
         if conversation_history:
-            messages.extend(conversation_history)
-            
-        # Add the current user message
-        messages.append({"role": "user", "content": user_message})
+            messages.extend(conversation_history[-5:])  # Only keep last 5 messages for context
         
+        # Add context about previous interactions if available
+        if 'last_action' in context:
+            messages.append({
+                "role": "system", 
+                "content": f"User's last action was: {context['last_action']}"
+            })
+                
+        # Add the current user message with language context
+        messages.append({
+            "role": "user", 
+            "content": f"[{language.upper()}] {user_message}"
+        })
+            
         logger_service.info('[ChatService] Messages prepared for API:')
         for msg in messages:
             role = msg['role']
@@ -187,10 +414,34 @@ def generate_reply(user_message, conversation_history=None):
             response = call_openai_api(messages)
             elapsed = time.time() - start_time
             
-            # Extract the response text
+            # Extract the response text and clean it
             bot_response = response.choices[0].message.content.strip()
+            
+            # Remove any language tags if present
+            for lang in ['[EN]', '[AM]', '[KRI]']:
+                if bot_response.startswith(lang):
+                    bot_response = bot_response[len(lang):].strip()
+            
+            # Update context based on response
+            if 'ticket' in bot_response.lower() and 'event' in bot_response.lower():
+                context['last_topic'] = 'tickets and events'
+            elif 'ticket' in bot_response.lower():
+                context['last_topic'] = 'tickets'
+            elif 'event' in bot_response.lower():
+                context['last_topic'] = 'events'
+                
+            # Log the response
             logger_service.info(f'✅ [ChatService] Successfully received response in {elapsed:.2f}s')
             logger_service.debug(f'[ChatService] Response: {bot_response[:200]}...')
+            
+            # Add context to the response if this is a follow-up
+            if is_follow_up and 'last_topic' in context:
+                follow_up_phrases = {
+                    'en': "Continuing about %s... ",
+                    'am': "በ%s ላይ በመቀጠል... ",
+                    'kri': "A de kam wit %s... "
+                }
+                bot_response = follow_up_phrases.get(language, follow_up_phrases['en']) % context['last_topic'] + bot_response
             
             return bot_response
             
@@ -198,7 +449,7 @@ def generate_reply(user_message, conversation_history=None):
             error_msg = f'❌ [ChatService] Authentication error with OpenAI API. Please check your API key.'
             logger_service.error(error_msg)
             logger_service.error(f'API Key: {api_key[:5]}...{api_key[-5:]}')
-            return "I'm sorry, there was an authentication error with the chat service. The administrator has been notified."
+            return lang_prompts.get('error', "I'm sorry, there was an error with the chat service. Please try again later.")
             
         except APIConnectionError as conn_err:
             error_msg = f'❌ [ChatService] Connection error with OpenAI API: {str(conn_err)}'
