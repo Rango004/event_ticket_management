@@ -58,7 +58,7 @@
     <div class="form-group mt-3">
         <h4 class="text-center mb-3">Or Upload QR Code Image</h4>
         <input type="file" id="qr-image-input" class="form-control mb-2" accept="image/*" aria-label="Upload QR code image">
-        <button id="validate-image-btn" class="btn btn-secondary btn-block" aria-label="Validate Uploaded QR Code">Validate from Image</button>
+        <button id="validate-image-btn" class="btn btn-primary btn-block" aria-label="Validate Uploaded QR Code">Validate from Image</button>
     </div>
     {% if user.is_staff %}
     <div class="mt-4 text-center">
@@ -502,20 +502,67 @@ $(document).ready(function() {
     
     // Initialize UI
     qrReader.hide();
-    stopCameraBtn.hide();
-    switchCameraBtn.hide();
+    
+    // Hide camera controls since we're making it automatic
+    $('.camera-controls').hide();
+    
+    // Start camera automatically
+    $(window).on('load', function() {
+        startCamera();
+    });
+    
+    // Image upload handling
+    const qrImageInput = $('#qr-image-input');
+    const validateImageBtn = $('#validate-image-btn');
+    
+    // Enable/disable validate button based on file selection
+    qrImageInput.on('change', function() {
+        if (this.files && this.files.length > 0) {
+            validateImageBtn.prop('disabled', false);
+        } else {
+            validateImageBtn.prop('disabled', true);
+        }
+    });
+    
+    // Handle image validation button click
+    validateImageBtn.on('click', function() {
+        const fileInput = qrImageInput[0];
+        if (fileInput.files && fileInput.files[0]) {
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                // Here you would typically process the image and extract the QR code
+                // For now, we'll just use the file name as the ticket code
+                const fileName = file.name.replace(/\.[^/.]+$/, ''); // Remove file extension
+                validateTicket(fileName);
+            };
+            
+            reader.readAsDataURL(file);
+        }
+    });
+    
+    // Initialize validate button as disabled
+    validateImageBtn.prop('disabled', true);
     
     // Initialize camera list when page loads
     enumerateCameras().then(cameras => {
         availableCameras = cameras;
         if (cameras.length > 0) {
-            cameraSelector.prop('disabled', false);
-            updateCameraStatus(`${cameras.length} camera(s) found`, 'text-success');
+            cameraSelector.prop('disabled', true); // Disable selector in auto-mode
+            updateCameraStatus(`Camera ready for scanning`, 'text-success');
             
-            // If there's only one camera, select it by default
-            if (cameras.length === 1) {
-                cameraSelector.val(cameras[0].deviceId);
+            // Start with the environment (back) camera if available
+            const backCamera = cameras.find(cam => cam.label.toLowerCase().includes('back') || 
+                                                 cam.label.toLowerCase().includes('rear'));
+            if (backCamera) {
+                startCamera(backCamera.deviceId);
+            } else if (cameras.length > 0) {
+                // Fall back to first available camera
+                startCamera(cameras[0].deviceId);
             }
+        } else {
+            updateCameraStatus('No cameras found', 'text-danger');
         }
     });
     
@@ -554,21 +601,10 @@ $(document).ready(function() {
         }
     });
     
-    // Auto-start camera if there's a saved preference
-    const savedCameraId = localStorage.getItem('preferredCameraId');
-    if (savedCameraId) {
-        cameraSelector.val(savedCameraId);
-        // Start camera automatically if a preference was saved
-        startCamera(savedCameraId);
-    }
+    // Auto-start with back camera by default
+    // (Removed manual camera selection since we're making it automatic)
     
-    // Save camera preference when changed
-    cameraSelector.on('change', function() {
-        const selectedCameraId = $(this).val();
-        if (selectedCameraId) {
-            localStorage.setItem('preferredCameraId', selectedCameraId);
-        }
-    });
+    // Camera selection is now automatic, so we don't need the change handler
     
     // Clean up camera on page unload
     $(window).on('beforeunload', function() {

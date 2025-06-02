@@ -188,6 +188,15 @@ async function handleSendMessage() {
         console.error('[Chat] userInput or sendMessageBtn not found');
         return;
     }
+    
+    // Check if user is authenticated
+    const isAuthenticated = document.body.getAttribute('data-is-authenticated') === 'true';
+    if (!isAuthenticated) {
+        appendMessage('Please log in to use the chat feature.', 'Bot');
+        window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+        return;
+    }
+    
     const message = userInput.value.trim();
     console.log('[Chat] Message to send:', message);
     if (!message) {
@@ -202,22 +211,31 @@ async function handleSendMessage() {
     showLoading(sendMessageBtn);
     console.log('[Chat] Show loading on send button.');
     console.log('[Chat] CSRF Token being used:', csrftoken);
-    console.log('[Chat] Entering try block for fetch.');
+    
     try {
         console.log('[Chat] About to fetch /chatbot/');
-        const response = await fetch('/chatbot/', { // Ensure this URL matches your Django urls.py
+        const response = await fetch('/chatbot/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': csrftoken
             },
+            credentials: 'same-origin',
             body: JSON.stringify({ message: message })
         });
 
         console.log('[Chat] Fetch response received:', response);
+        
+        if (response.status === 403) {
+            // Handle unauthorized access
+            appendMessage('Your session has expired. Please log in again.', 'Bot');
+            window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+            return;
+        }
+        
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ reply: 'Error connecting to chatbot.'}));
-            throw new Error(errorData.reply || `HTTP error! Status: ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.reply || `Error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
@@ -226,11 +244,14 @@ async function handleSendMessage() {
         console.log('[Chat] Bot message appended to UI.');
 
     } catch (error) {
-        console.error('[Chat] Entered catch block. Error object:', error);
-        console.error('Chatbot error:', error);
-        appendMessage(`Sorry, I couldn't connect: ${error.message}`, 'Bot');
+        console.error('[Chat] Error in handleSendMessage:', error);
+        if (error.message.includes('Failed to fetch')) {
+            appendMessage('Unable to connect to the server. Please check your internet connection.', 'Bot');
+        } else {
+            appendMessage(`Sorry, an error occurred: ${error.message}`, 'Bot');
+        }
     } finally {
-        console.log('[Chat] Entered finally block.');
+        console.log('[Chat] Cleaning up...');
         hideLoading(sendMessageBtn);
         userInput.focus();
     }

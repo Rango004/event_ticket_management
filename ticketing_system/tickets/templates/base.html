@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="{% static 'tickets/css/styles.css' %}">
 </head>
-<body>
+<body data-is-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}">
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
         <div class="container">
@@ -58,6 +58,7 @@
         {% block content %}{% endblock content %}
     </main>
 
+    {% if user.is_authenticated %}
     <!-- Chat Toggle Button -->
     <button id="chat-toggle-btn" class="btn btn-primary rounded-circle p-0 shadow" style="position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; z-index: 1050; font-size: 24px;">
         <i class="bi bi-chat-dots-fill"></i>
@@ -83,6 +84,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
         <div id="purchaseToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
             <div class="toast-header bg-success text-white">

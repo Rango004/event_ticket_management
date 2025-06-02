@@ -1,4 +1,5 @@
 from django.urls import path
+from django.contrib.auth.decorators import login_required
 from .views import (
     delete_event,
     edit_event,
@@ -65,5 +66,6 @@ urlpatterns = [
     path('create/<int:event_id>/', create_ticket, name='create_ticket'),
     path('validate/<str:qr_data>/', validate_ticket, name='validate_ticket'),
     path('api/validate-ticket/', validate_ticket_api, name='validate_ticket_api'),
-    path('chatbot/', send_message, name='send_message'),
+    # Chatbot endpoint - requires login
+    path('chatbot/', login_required(send_message), name='send_message'),
 ]

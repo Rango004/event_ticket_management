@@ -544,6 +544,7 @@ def home(request):
 
 
 @csrf_exempt
+@login_required
 def chatbot_webhook(request):
     logger.info(f'[chatbot_webhook] VIEW ENTERED. Method: {request.method}. Headers: {dict(request.headers)}') # Using .info for higher visibility for now
     if request.method == 'POST':
