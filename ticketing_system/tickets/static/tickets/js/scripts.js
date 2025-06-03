@@ -159,7 +159,7 @@ function getCookie(name) {
     return cookieValue;
 }
 const csrftoken = getCookie('my_csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value;
-    console.log('[Chat] Attempted to get CSRF token (my_csrftoken):', csrftoken);
+    
 
 function appendMessage(message, sender) { // sender can be 'User' or 'Bot'
     if (!chatMessages) return;
@@ -183,7 +183,7 @@ closeChatBtn?.addEventListener('click', () => {
 });
 
 async function handleSendMessage() {
-    console.log('[Chat] handleSendMessage called');
+    
     if (!userInput || !sendMessageBtn) {
         console.error('[Chat] userInput or sendMessageBtn not found');
         return;
@@ -198,22 +198,22 @@ async function handleSendMessage() {
     }
     
     const message = userInput.value.trim();
-    console.log('[Chat] Message to send:', message);
+    
     if (!message) {
-        console.log('[Chat] Message is empty, returning.');
+        
         return;
     }
 
     appendMessage(message, 'User');
-    console.log('[Chat] User message appended to UI.');
+    
     userInput.value = '';
-    console.log('[Chat] User input cleared.');
+    
     showLoading(sendMessageBtn);
-    console.log('[Chat] Show loading on send button.');
-    console.log('[Chat] CSRF Token being used:', csrftoken);
+    
+    
     
     try {
-        console.log('[Chat] About to fetch /chatbot/');
+        
         const response = await fetch('/chatbot/', {
             method: 'POST',
             headers: {
@@ -224,7 +224,7 @@ async function handleSendMessage() {
             body: JSON.stringify({ message: message })
         });
 
-        console.log('[Chat] Fetch response received:', response);
+        
         
         if (response.status === 403) {
             // Handle unauthorized access
@@ -239,9 +239,9 @@ async function handleSendMessage() {
         }
 
         const data = await response.json();
-        console.log('[Chat] Bot response data (from JSON):', data);
+        
         appendMessage(data.reply, 'Bot');
-        console.log('[Chat] Bot message appended to UI.');
+        
 
     } catch (error) {
         console.error('[Chat] Error in handleSendMessage:', error);
@@ -251,7 +251,7 @@ async function handleSendMessage() {
             appendMessage(`Sorry, an error occurred: ${error.message}`, 'Bot');
         }
     } finally {
-        console.log('[Chat] Cleaning up...');
+        
         hideLoading(sendMessageBtn);
         userInput.focus();
     }

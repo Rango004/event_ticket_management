@@ -4,6 +4,27 @@
 {% block content %}
 <div class="container mt-4">
     <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0"><i class="bi bi-qr-code-scan"></i> QR Code Scanner</h4>
+                    <button id="qr-toggle-btn" class="btn btn-light btn-sm">
+                        <i class="bi bi-camera-video-off"></i> Start Camera
+                    </button>
+                </div>
+                <div class="card-body text-center">
+                    <div id="qr-placeholder" class="text-secondary">
+                        <i class="bi bi-qr-code" style="font-size: 3rem;"></i>
+                        <p>Camera not started</p>
+                    </div>
+                    <video id="qr-video" width="320" height="240" style="display:none;" playsinline></video>
+                    <canvas id="qr-canvas" width="320" height="240" style="display:none;"></canvas>
+                    <div id="qr-status" class="alert alert-secondary mt-3">Status will appear here</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
         <div class="col-md-3">
             <div class="card mb-4">
                 <div class="card-header bg-primary text-white">
@@ -102,6 +123,159 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- jsQR library -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+let qrCameraActive = false;
+let qrStream = null;
+let qrScanInterval = null;
+
+function updateQRStatus(message, type = 'info') {
+    const statusEl = document.getElementById('qr-status');
+    if (statusEl) {
+        statusEl.textContent = message;
+        statusEl.className = `alert alert-${type} mt-3`;
+    }
+}
+
+function setQRCameraState(isActive) {
+    const video = document.getElementById('qr-video');
+    const placeholder = document.getElementById('qr-placeholder');
+    if (isActive) {
+        if (video) video.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+    } else {
+        if (video) video.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'block';
+    }
+}
+
+async function startQRCamera() {
+    const video = document.getElementById('qr-video');
+    const canvas = document.getElementById('qr-canvas');
+    if (!video || !canvas) return;
+    try {
+        qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = qrStream;
+        await video.play();
+        qrCameraActive = true;
+        setQRCameraState(true);
+        updateQRStatus('Camera active. Point at a QR code.', 'info');
+        qrScanInterval = setInterval(scanQRCode, 400);
+        canvas.style.display = 'none'; // Hide canvas by default
+    } catch (err) {
+        updateQRStatus('Camera error: ' + err.message, 'danger');
+    }
+}
+
+function stopQRCamera() {
+    const video = document.getElementById('qr-video');
+    if (qrStream) {
+        qrStream.getTracks().forEach(track => track.stop());
+        qrStream = null;
+    }
+    if (video) {
+        video.pause();
+        video.srcObject = null;
+    }
+    qrCameraActive = false;
+    setQRCameraState(false);
+    updateQRStatus('Camera stopped.', 'secondary');
+    if (qrScanInterval) clearInterval(qrScanInterval);
+}
+
+function toggleQRCamera() {
+    if (qrCameraActive) {
+        stopQRCamera();
+    } else {
+        startQRCamera();
+    }
+}
+
+async function scanQRCode() {
+    const video = document.getElementById('qr-video');
+    const canvas = document.getElementById('qr-canvas');
+    if (!video || !canvas) return;
+    // Only scan if video is ready and has dimensions
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+        return;
+    }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.style.display = 'none'; // Hide canvas in production
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let imageData;
+    try {
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch (err) {
+        updateQRStatus('QR scan error: ' + err.message, 'danger');
+        return;
+    }
+    let code = null;
+    try {
+        code = jsQR(imageData.data, canvas.width, canvas.height);
+    } catch (err) {
+        updateQRStatus('QR scan error: ' + err.message, 'danger');
+        return;
+    }
+    if (code) {
+        updateQRStatus('QR code detected. Validating...', 'warning');
+        if (qrScanInterval) {
+            clearInterval(qrScanInterval);
+            qrScanInterval = null;
+        }
+        stopQRCamera();
+        canvas.style.display = 'none'; // Hide canvas after scan
+        validateQRCode(code.data);
+    }
+}
+
+async function validateQRCode(qrData) {
+    // Adjust URL and method as needed for your backend
+    try {
+        const resp = await fetch('/staff/validate_qr/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ qr_code: qrData })
+        });
+        const result = await resp.json();
+        if (result.valid) {
+            updateQRStatus('✅ QR code is valid!', 'success');
+        } else {
+            updateQRStatus('❌ Invalid QR code.', 'danger');
+        }
+    } catch (err) {
+        updateQRStatus('Validation error: ' + err.message, 'danger');
+    }
+}
+
+// Helper for CSRF token (Django)
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('qr-toggle-btn');
+    if (btn) btn.addEventListener('click', toggleQRCamera);
+    setQRCameraState(false);
+    updateQRStatus('Click "Start Camera" to scan QR code.', 'info');
+});
+</script>
 <script>
 // Initialize Bootstrap tooltips
 document.addEventListener('DOMContentLoaded', function() {

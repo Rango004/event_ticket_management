@@ -8,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="{% static 'tickets/css/styles.css' %}">
+    {% block extra_head %}{% endblock %}
 </head>
 <body data-is-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}">
     <!-- Navbar -->
@@ -107,10 +108,16 @@
         </div>
     </div>
     <!-- Scripts -->
+    <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- HTML5 QR Code Scanner -->
     <script src="https://unpkg.com/html5-qrcode@2.0.9/dist/html5-qrcode.min.js"></script>
-    {% block extra_js %}{% endblock extra_js %}
+    
+    <!-- Custom JavaScript -->
     <script src="{% static 'tickets/js/scripts.js' %}"></script>
+    
+    <!-- Extra JavaScript blocks -->
+    {% block extra_js %}{% endblock %}
     {% block tickets_js %}{% endblock tickets_js %}
 </body>
 </html>

@@ -78,21 +78,21 @@ def retry_on_exception(max_retries=3, initial_delay=1, backoff=2, exceptions=(AP
 
 # Set up logging
 logger_service = logging.getLogger('tickets.chatbot_service')
-logger_service.setLevel(logging.DEBUG)  # Set to DEBUG for more detailed logs
+logger_service.setLevel(logging.WARNING)  # Set to WARNING for production
 
 # Add a console handler if not already configured
 if not logger_service.handlers:
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.WARNING)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     console_handler.setFormatter(formatter)
     logger_service.addHandler(console_handler)
 
-# Debug environment variables
-logger_service.debug('=' * 80)
-logger_service.debug('Environment Variables Debug:')
-logger_service.debug(f'Current working directory: {os.getcwd()}')
-logger_service.debug(f'Environment file exists: {os.path.exists(".env")}')
+# Debug logging disabled for production
+# logger_service.debug('=' * 80)
+# logger_service.debug('Environment Variables Debug:')
+# logger_service.debug(f'Current working directory: {os.getcwd()}')
+# logger_service.debug(f'Environment file exists: {os.path.exists(".env")}')
 
 # Load environment variables from .env file
 load_dotenv()
@@ -104,9 +104,9 @@ api_key = os.getenv('OPENAI_API_KEY', getattr(settings, 'OPENAI_API_KEY', ''))
 if not api_key:
     logger_service.error('❌ OPENAI_API_KEY not found in environment variables or settings.')
     logger_service.error('Please make sure you have a .env file with OPENAI_API_KEY in the project root.')
-else:
-    logger_service.info('✅ OPENAI_API_KEY found in environment variables')
-    logger_service.debug(f'API Key: {api_key[:5]}...{api_key[-5:]}' if api_key else 'No API key')
+# else:
+#     logger_service.info('✅ OPENAI_API_KEY found in environment variables')
+#     logger_service.debug(f'API Key: {api_key[:5]}...{api_key[-5:]}' if api_key else 'No API key')
 
 # Initialize the OpenAI client
 client = None

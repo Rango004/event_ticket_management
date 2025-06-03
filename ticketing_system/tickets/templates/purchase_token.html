@@ -1,25 +1,718 @@
 {% extends 'base.html' %}
+{% load static %}
+
+{% block extra_head %}
+<!-- Load MediaPipe scripts -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+
+
+// Gesture states
+const GESTURES = {
+    THUMBS_UP: 'thumbs_up',
+    PEACE_SIGN: 'peace_sign',
+    POINTING: 'pointing',
+    NONE: 'none'
+};
+
+// Global state
+let hands = null;
+let camera = null;
+let cameraActive = false;
+let currentGesture = GESTURES.NONE;
+let autoSubmitTimer = null;
+let lastGesture = null;
+
+// Simple status update function
+function updateStatus(message, type = 'info') {
+    const statusElement = document.getElementById('gesture-status');
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.className = `alert alert-${type}`;
+    }
+}
+
+// Update camera status
+function updateCameraStatus(message, type = 'info', isLoading = false) {
+    const statusElement = document.getElementById('camera-status');
+    if (!statusElement) return;
+    
+    const spinner = statusElement.querySelector('.spinner-border');
+    const textSpan = statusElement.querySelector('span');
+    
+    if (spinner) spinner.style.display = isLoading ? 'inline-block' : 'none';
+    if (textSpan) textSpan.textContent = message;
+    
+    // Update alert class based on type
+    statusElement.className = `alert alert-${type} mb-0`;
+}
+
+// Show/hide camera elements
+function setCameraState(isActive) {
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('output');
+    const placeholder = document.getElementById('camera-placeholder');
+    const startBtn1 = document.getElementById('start-camera-btn');
+    const startBtn2 = document.getElementById('start-camera-btn-2');
+    
+    if (isActive) {
+        if (video) video.style.display = 'block';
+        if (canvas) canvas.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+        if (startBtn1) startBtn1.innerHTML = '<i class="bi bi-camera-video"></i> Stop Camera';
+        if (startBtn2) startBtn2.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Camera';
+    } else {
+        if (video) video.style.display = 'none';
+        if (canvas) canvas.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'block';
+        if (startBtn1) startBtn1.innerHTML = '<i class="bi bi-camera-video-off"></i> Start Camera';
+        if (startBtn2) startBtn2.innerHTML = '<i class="bi bi-play-circle"></i> Start Camera';
+    }
+}
+
+// Initialize gesture recognition
+window.initializeApp = function() {
+    
+    // Get DOM elements
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('output');
+    const gestureStatus = document.getElementById('gesture-status');
+    const confirmButton = document.getElementById('confirm-purchase');
+    
+    if (!video || !canvas || !gestureStatus || !confirmButton) {
+
+        return;
+    }
+    
+    canvas.style.display = 'block';
+    
+    // Setup MediaPipe Hands
+    hands = new window.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+    
+    hands.onResults((results) => {
+        processHandResults(results, canvas, gestureStatus, confirmButton);
+    });
+    
+    // Setup Camera
+    camera = new window.Camera(video, {
+        onFrame: async () => {
+            if (cameraActive) {
+                try {
+                    await hands.send({image: video});
+                } catch (e) {
+    
+                }
+            }
+        },
+        width: 640,
+        height: 480
+    });
+    
+    // Button to start camera
+    let btn1 = document.getElementById('start-camera-btn');
+    let btn2 = document.getElementById('start-camera-btn-2');
+    
+    function startCam() {
+        if (!cameraActive) {
+            cameraActive = true;
+            camera.start();
+            updateStatus('Camera active - show a gesture!', 'info');
+            setCameraState(true);
+            updateCameraStatus('Camera is active', 'success');
+        }
+    }
+    
+    function stopCam() {
+        if (cameraActive) {
+            cameraActive = false;
+            camera.stop();
+            updateStatus('Camera stopped. Start camera to continue.', 'info');
+            setCameraState(false);
+            updateCameraStatus('Camera stopped. Click "Start Camera" to begin.', 'info');
+        }
+    }
+    
+    function toggleCam() {
+        if (cameraActive) {
+            stopCam();
+        } else {
+            startCam();
+        }
+    }
+    
+    if (btn1) btn1.addEventListener('click', toggleCam);
+    if (btn2) btn2.addEventListener('click', toggleCam);
+    
+
+};
+
+function processHandResults(results, canvas, gestureStatus, confirmButton) {
+    try {
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw camera feed
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+        
+        // Draw hand landmarks
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            for (const landmarks of results.multiHandLandmarks) {
+                if (window.drawConnectors && window.HAND_CONNECTIONS) {
+                    window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+                }
+                if (window.drawLandmarks) {
+                    window.drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 2, radius: 3});
+                }
+                
+                // Detect gesture
+                let gesture = detectGesture(landmarks);
+
+                updateGestureStatusUI(gesture, gestureStatus, confirmButton);
+            }
+        } else {
+            updateGestureStatusUI(GESTURES.NONE, gestureStatus, confirmButton);
+        }
+        ctx.restore();
+    } catch (err) {
+        
+    }
+}
+
+function detectGesture(landmarks) {
+    // Simple rules for thumbs up, peace, pointing
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const middleTip = landmarks[12];
+    const ringTip = landmarks[16];
+    const pinkyTip = landmarks[20];
+    const wrist = landmarks[0];
+    
+    // Thumbs up: thumb above wrist, others folded
+    if (
+        thumbTip.y < wrist.y &&
+        indexTip.y > thumbTip.y &&
+        middleTip.y > thumbTip.y &&
+        ringTip.y > thumbTip.y &&
+        pinkyTip.y > thumbTip.y
+    ) {
+        return GESTURES.THUMBS_UP;
+    }
+    
+    // Peace sign: index and middle above others
+    if (
+        indexTip.y < ringTip.y &&
+        middleTip.y < ringTip.y &&
+        Math.abs(indexTip.x - middleTip.x) > 0.05
+    ) {
+        return GESTURES.PEACE_SIGN;
+    }
+    
+    // Pointing: only index above others
+    if (
+        indexTip.y < middleTip.y &&
+        indexTip.y < ringTip.y &&
+        indexTip.y < pinkyTip.y &&
+        thumbTip.y > indexTip.y
+    ) {
+        return GESTURES.POINTING;
+    }
+    
+    return GESTURES.NONE;
+}
+
+function updateGestureStatusUI(gesture, gestureStatus, confirmButton) {
+    if (gesture === currentGesture) return;
+    currentGesture = gesture;
+    
+    if (gesture === GESTURES.THUMBS_UP) {
+        gestureStatus.textContent = '👍 Thumbs up detected! Confirming...';
+        gestureStatus.className = 'alert alert-success';
+        confirmButton.disabled = false;
+        
+        setTimeout(() => {
+            if (currentGesture === GESTURES.THUMBS_UP) {
+                confirmButton.disabled = true;
+                // Submit the form
+                const form = document.getElementById('purchase-form');
+                if (form) {
+
+                    form.submit();
+                }
+            }
+        }, 1500);
+        
+    } else if (gesture === GESTURES.PEACE_SIGN) {
+        gestureStatus.textContent = '✌️ Peace sign detected!';
+        gestureStatus.className = 'alert alert-info';
+        confirmButton.disabled = true;
+    } else if (gesture === GESTURES.POINTING) {
+        gestureStatus.textContent = '👆 Pointing detected!';
+        gestureStatus.className = 'alert alert-warning';
+        confirmButton.disabled = true;
+    } else {
+        gestureStatus.textContent = '👋 Show a gesture to confirm your purchase';
+        gestureStatus.className = 'alert alert-secondary';
+        confirmButton.disabled = true;
+    }
+}
+
+// Handle form submission
+function handleFormSubmit(e) {
+    if (currentGesture !== GESTURES.THUMBS_UP) {
+        e.preventDefault();
+        updateStatus('❌ Please show a valid thumbs up gesture before submitting', 'danger');
+        return false;
+    }
+    
+    updateStatus('✅ Processing your request...', 'success');
+    return true;
+}
+
+// Start initialization when the page is fully loaded
+document.addEventListener('DOMContentLoaded', () => {
+    
+    const purchaseForm = document.getElementById('purchase-form');
+    if (purchaseForm) {
+        purchaseForm.addEventListener('submit', handleFormSubmit);
+    }
+
+    updateCameraStatus('Click "Start Camera" to begin', 'info');
+    setCameraState(false);
+    
+    // Initialize gesture recognition
+    if (typeof window.initializeApp !== 'undefined') {
+        window.initializeApp();
+    }
+});
+</script>
+<style>
+    #camera-container {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+    }
+    #camera-feed {
+        display: none;
+    }
+    #output {
+        width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    #gesture-status {
+        margin-top: 20px;
+        text-align: center;
+        padding: 15px;
+        border-radius: 8px;
+        font-size: 1.1em;
+    }
+    .gesture-instruction {
+        margin: 15px 0;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border-left: 4px solid #0d6efd;
+    }
+    .gesture-icon {
+        font-size: 1.5em;
+        margin: 0 5px;
+    }
+    #confirm-section {
+        margin-top: 30px;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+</style>
+<!-- Load MediaPipe scripts -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+// Check if MediaPipe is loaded
+function isMediaPipeReady() {
+    const isReady = window.Hands && window.drawConnectors && window.HAND_CONNECTIONS;
+    return isReady;
+}
+
+// Wait for MediaPipe to be ready
+function waitForMediaPipe() {
+    return new Promise((resolve) => {
+        if (isMediaPipeReady()) {
+            resolve();
+            return;
+        }
+        
+        const checkInterval = setInterval(() => {
+            if (isMediaPipeReady()) {
+                clearInterval(checkInterval);
+                resolve();
+            }
+        }, 100);
+    });
+}
+
+// Enhanced camera test with detailed logging and diagnostics
+async function testCamera() {
+    const video = document.getElementById('camera-feed');
+    
+    if (!video) {
+        const error = 'Video element not found';
+        updateCameraStatus(error, 'danger');
+        return false;
+    }
+    
+    try {
+        // Check if browser supports mediaDevices
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            const error = 'getUserMedia is not supported in this browser';
+            updateCameraStatus(error, 'danger');
+            return false;
+        }
+        
+        updateCameraStatus('Requesting camera access...', 'info', true);
+        
+        const constraints = {
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user',
+                frameRate: { ideal: 30, max: 60 }
+            },
+            audio: false
+        };
+        
+        // Request camera access
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+            .catch(err => {
+                throw err;
+            });
+            
+        video.srcObject = stream;
+        video.playsInline = true;
+        video.muted = true;
+        video.style.display = 'block';
+        
+        // Wait for video to be ready
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Video play timeout'));
+            }, 5000);
+            
+            video.oncanplay = () => {
+                clearTimeout(timeout);
+                resolve();
+            };
+            
+            video.onerror = (e) => {
+                clearTimeout(timeout);
+                reject(new Error('Video playback error'));
+            };
+        });
+        
+        updateCameraStatus('Camera is active', 'success');
+        return true;
+        
+    } catch (error) {
+        updateCameraStatus('Error: ' + (error.message || 'Failed to access camera'), 'danger');
+        return false;
+    }
+}
+
+// Update the UI status
+function updateCameraStatus(message, type = 'info', isLoading = false) {
+    const statusElement = document.getElementById('camera-status');
+    if (!statusElement) return;
+    
+    const spinner = statusElement.querySelector('.spinner-border');
+    const textSpan = statusElement.querySelector('span');
+    
+    if (spinner) spinner.style.display = isLoading ? 'inline-block' : 'none';
+    if (textSpan) textSpan.textContent = message;
+    
+    // Update alert class based on type
+    statusElement.className = `alert alert-${type} mb-0`;
+}
+
+// Show/hide camera elements
+function setCameraState(isActive) {
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('output');
+    const placeholder = document.getElementById('camera-placeholder');
+    const startBtn1 = document.getElementById('start-camera-btn');
+    const startBtn2 = document.getElementById('start-camera-btn-2');
+    
+    if (isActive) {
+        if (video) video.style.display = 'block';
+        if (canvas) canvas.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+        if (startBtn1) startBtn1.innerHTML = '<i class="bi bi-camera-video"></i> Stop Camera';
+        if (startBtn2) startBtn2.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Camera';
+    } else {
+        if (video) video.style.display = 'none';
+        if (canvas) canvas.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'block';
+        if (startBtn1) startBtn1.innerHTML = '<i class="bi bi-camera-video-off"></i> Start Camera';
+        if (startBtn2) startBtn2.innerHTML = '<i class="bi bi-play-circle"></i> Start Camera';
+    }
+}
+
+// Function to stop the camera
+function stopCamera() {
+    const video = document.getElementById('camera-feed');
+    if (video && video.srcObject) {
+        const tracks = video.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+        video.srcObject = null;
+    }
+    setCameraState(false);
+    updateCameraStatus('Camera stopped. Click "Start Camera" to begin.', 'info');
+}
+
+// Function to initialize the camera and gesture recognition
+async function initializeCameraAndGestures() {
+    updateCameraStatus('Initializing camera...', 'info', true);
+    
+    try {
+        // Test camera access first
+        const cameraTest = await testCamera();
+        if (!cameraTest) {
+            console.error('Camera test failed');
+            updateCameraStatus('Failed to access camera. Please check permissions.', 'danger');
+            return false;
+        }
+        
+        // If we get here, camera is working
+        console.log('Camera initialized successfully, loading gesture recognition...');
+        updateCameraStatus('Loading gesture recognition...', 'info', true);
+        
+        // Check if gesture recognition script is already loaded
+        if (window.initializeApp) {
+            console.log('Gesture recognition already loaded, initializing...');
+            await window.initializeApp();
+            return true;
+        }
+        
+        // Load the gesture recognition script if not already loaded
+        if (!document.querySelector('script[src*="gestureRecognition.js"]')) {
+            console.log('Loading gesture recognition script...');
+            return new Promise((resolve) => {
+                const script = document.createElement('script');
+                script.src = '{% static "js/gestureRecognition.js" %}';
+                script.onload = async () => {
+                    console.log('Gesture recognition script loaded');
+                    if (window.initializeApp) {
+                        console.log('Initializing gesture recognition...');
+                        await window.initializeApp();
+                        resolve(true);
+                    } else {
+                        console.error('initializeApp function not found in gesture recognition script');
+                        updateCameraStatus('Error initializing gesture recognition.', 'danger');
+                        resolve(false);
+                    }
+                };
+                script.onerror = (error) => {
+                    console.error('Failed to load gesture recognition:', error);
+                    updateCameraStatus('Failed to load gesture recognition.', 'danger');
+                    resolve(false);
+                };
+                document.head.appendChild(script);
+            });
+        }
+        return true;
+        
+    } catch (error) {
+        console.error('Initialization error:', error);
+        updateCameraStatus('Error: ' + (error.message || 'Failed to initialize camera'), 'danger');
+        return false;
+    }
+}
+
+// Handle camera start/stop
+function handleStartStopClick() {
+    console.log('--- Start/Stop Button Clicked ---'); // VERY BASIC LOG
+    const video = document.getElementById('camera-feed');
+    if (video && video.srcObject) {
+        console.log('Camera is currently running. Stopping camera...');
+        stopCamera();
+    } else {
+        console.log('Camera is not running. Attempting to start camera...');
+        initializeCameraAndGestures(); // We will await this if the basic log works
+    }
+}
+
+// Start initialization when the page is fully loaded
+document.addEventListener('DOMContentLoaded', () => {
+     // VERY BASIC LOG
+    
+    const startBtn1 = document.getElementById('start-camera-btn');
+    const startBtn2 = document.getElementById('start-camera-btn-2');
+
+    if (startBtn1) {
+        
+        startBtn1.addEventListener('click', handleStartStopClick);
+    } else {
+        console.error('Button with ID start-camera-btn NOT FOUND');
+    }
+
+    if (startBtn2) {
+        
+        startBtn2.addEventListener('click', handleStartStopClick);
+    } else {
+        console.error('Button with ID start-camera-btn-2 NOT FOUND');
+    }
+
+    updateCameraStatus('Click "Start Camera" to begin', 'info');
+    setCameraState(false);
+});
+</script>
+<style>
+    #camera-container {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+    }
+    #camera-feed {
+        display: none;
+    }
+    #output {
+        width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    #gesture-status {
+        margin-top: 20px;
+        text-align: center;
+        padding: 15px;
+        border-radius: 8px;
+        font-size: 1.1em;
+    }
+    .gesture-instruction {
+        margin: 15px 0;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border-left: 4px solid #0d6efd;
+    }
+    .gesture-icon {
+        font-size: 1.5em;
+        margin: 0 5px;
+    }
+    #confirm-section {
+        margin-top: 30px;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <div class="card">
-        <div class="card-header bg-primary text-white">
-            <h4>Redeem Credit Token</h4>
-        </div>
-        <div class="card-body">
-            <form method="post" action="{% url 'redeem_token' %}">
-                {% csrf_token %}
-                <div class="mb-3">
-                    <label for="token_code" class="form-label">Token Code</label>
-                    <input type="text" name="token_code" id="token_code" 
-                           class="form-control" 
-                           placeholder="Enter your token code"
-                           required>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4><i class="bi bi-credit-card"></i> Redeem Credit Token</h4>
                 </div>
-                <button type="submit" class="btn btn-success">
-                    Redeem Token
-                </button>
-            </form>
+                <div class="card-body">
+                    <form id="purchase-form" method="post" action="{% url 'redeem_token' %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="token_code" class="form-label">Token Code</label>
+                            <input type="text" 
+                                   name="token_code" 
+                                   id="token_code" 
+                                   class="form-control form-control-lg" 
+                                   placeholder="Enter your token code"
+                                   required>
+                        </div>
+                        
+                        <div class="gesture-instruction">
+                            <h5>Gesture Confirmation Required</h5>
+                            <p>Please show one of the following gestures to confirm your purchase:</p>
+                            <div class="d-flex justify-content-around mt-3">
+                                <div class="text-center">
+                                    <div class="gesture-icon">👍</div>
+                                    <div>Thumbs Up to Confirm</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="gesture-icon">✌️</div>
+                                    <div>Peace Sign</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="gesture-icon">👆</div>
+                                    <div>Pointing</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="confirm-section" class="text-center">
+                            <div id="gesture-status" class="alert alert-secondary">
+                                👋 Initializing camera...
+                            </div>
+                            <button id="confirm-purchase" type="submit" class="btn btn-success btn-lg" disabled>
+                                <i class="bi bi-check-circle"></i> Confirm Purchase
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0"><i class="bi bi-camera-video"></i> Camera Feed</h4>
+                    <button id="start-camera-btn" class="btn btn-light btn-sm">
+                        <i class="bi bi-camera-video-off"></i> Start Camera
+                    </button>
+                </div>
+                <div class="card-body text-center p-0 d-flex flex-column">
+                    <div id="camera-container" class="flex-grow-1 d-flex align-items-center justify-content-center bg-dark" 
+                         style="min-height: 300px;">
+                        <div id="camera-placeholder" class="text-white">
+                            <i class="bi bi-camera-video-off" style="font-size: 3rem;"></i>
+                            <p class="mt-2">Camera not started</p>
+                            <button id="start-camera-btn-2" class="btn btn-primary mt-2">
+                                <i class="bi bi-play-circle"></i> Start Camera
+                            </button>
+                        </div>
+                        <video id="camera-feed" class="w-100 h-100" autoplay playsinline muted style="display: none; object-fit: contain;"></video>
+                        <canvas id="output" width="640" height="480" style="max-width: 100%; height: auto;"></canvas>
+                    </div>
+                    <div class="p-3 border-top">
+                        <div id="camera-status" class="alert alert-info mb-0">
+                            <div class="d-flex align-items-center justify-content-center">
+                                <div class="spinner-border spinner-border-sm me-2" role="status" style="display: none;">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span>Click "Start Camera" to begin</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

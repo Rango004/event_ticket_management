@@ -270,30 +270,66 @@ $(document).ready(function() {
     function startQRScanner() {
         if (isScanning) return;
         
+        // Make sure the scanner container is visible and has dimensions
+        const qrReaderElement = document.getElementById('qr-reader');
+        qrReaderElement.style.minHeight = '300px';
+        qrReaderElement.style.width = '100%';
+        
         // Initialize the scanner
-        html5QrCode = new Html5Qrcode("qr-reader");
+        html5QrCode = new Html5Qrcode("qr-reader", true);
         
         // Configuration for the scanner
         const config = { 
             fps: 10,
-            qrbox: 250,
-            aspectRatio: 1.0
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0,
+            disableFlip: false
+        };
+        
+        // Camera selection options
+        const cameraOptions = { 
+            facingMode: { exact: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
         };
         
         // Start the scanner
         html5QrCode.start(
-            { facingMode: "environment" }, // Use back camera
+            cameraOptions,
             config,
-            onScanSuccess, // Callback for successful scans
-            onScanError   // Callback for scan errors
+            onScanSuccess,
+            onScanError
         ).then(() => {
             isScanning = true;
             qrReader.show();
             startCameraBtn.hide();
             stopCameraBtn.show();
+            updateCameraStatus('Camera started', 'text-success');
         }).catch(err => {
             console.error("Error starting scanner:", err);
-            alert("Error accessing camera. Please ensure you've granted camera permissions.");
+            // Try with user-facing camera if environment camera fails
+            if (err.message && err.message.includes('NotReadableError')) {
+                console.log('Trying with user-facing camera...');
+                html5QrCode.start(
+                    { facingMode: "user" },
+                    config,
+                    onScanSuccess,
+                    onScanError
+                ).then(() => {
+                    isScanning = true;
+                    qrReader.show();
+                    startCameraBtn.hide();
+                    stopCameraBtn.show();
+                    updateCameraStatus('Using front camera', 'text-warning');
+                }).catch(err2 => {
+                    console.error("Failed to start with any camera:", err2);
+                    updateCameraStatus('Failed to access camera', 'text-danger');
+                    alert('Failed to access any camera. Please check permissions and try again.');
+                });
+            } else {
+                updateCameraStatus('Camera error: ' + (err.message || 'Unknown error'), 'text-danger');
+                alert('Error accessing camera: ' + (err.message || 'Please check permissions and try again.'));
+            }
         });
     }
     

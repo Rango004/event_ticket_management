@@ -16,11 +16,6 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Debug: Print loaded environment variables
-print("\n=== Loaded Environment Variables ===")
-print(f"OPENAI_API_KEY: {'*' * 20}{os.getenv('OPENAI_API_KEY', 'Not Found')[-4:] if os.getenv('OPENAI_API_KEY') else 'Not Found'}")
-print("==================================\n")
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
